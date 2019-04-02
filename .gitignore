@@ -1,0 +1,10 @@
+.idea/
+*.html
+*.txt
+*.pyc
+*.ai
+*.svg
+*.png
+*.pdf
+*.eps
+*.csv
