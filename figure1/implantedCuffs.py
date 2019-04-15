@@ -1,33 +1,32 @@
-import plotly
-import plotly.graph_objs as go
-import pymongo
-import yaml
 import numpy as np
 import helperFcns as hf
-import plotly.io as pio
+import seaborn as sns
+import collections
+import pandas as pd
+import matplotlib.pyplot as plt
+plt.rcParams['svg.fonttype'] = 'none'
 
-eType = 'epineural'
-subjectList = hf.getSubjects(eType)
-cuffPerSub = hf.cuffsPerSubject(subjectList)
-cuffLabels = hf.allCuffs_mdf.keys()
-cuffNames = [hf.allCuffs_mdf[iKey] for iKey in hf.allCuffs_mdf.keys()]
 
-hMap = np.ones((len(subjectList),len(cuffLabels)))
-for sub in cuffPerSub:
-    rowIdx = subjectList.index(sub['subject'])
-    subNerveList = sub['nerve']
-    hMap[rowIdx, [i for i, x in enumerate(cuffLabels) if x in subNerveList]] = 0
+for eType in ['epineural', 'penetrating']:
+    cuffLabels = hf.allCuffs_mdf.keys()
+    cuffNames = hf.allCuffs_mdf.values()
 
-hMap[:,cuffLabels.index('Sciatic_Proximal')] = 0
-hMap[:,cuffLabels.index('Femoral_Proximal')] = 0
+    subjectList = hf.getSubjects(eType)
+    cuffPerSub = hf.cuffsPerSubject2(subjectList)
 
-colIdx = sum(hMap) != len(cuffPerSub)
-cuffList = [cuffNames[i] for i in np.where(colIdx)[0]]
-hMap = hMap[:,colIdx]
+    cuffArray = collections.OrderedDict()
+    for iSub in subjectList:
+        cuffArray[iSub] = np.double(~(np.isin(cuffLabels, cuffPerSub[iSub])))
 
-trace = go.Heatmap(z=hMap, y=subjectList,x=cuffList,colorscale='Greys')
-data=[trace]
-fig = go.Figure()
-fig.add_heatmap(z=hMap, y=subjectList,x=cuffList,colorscale='Greys')
-# plotly.offline.plot(data, filename='implantedCuffs_'+eType+'.html',auto_open=True)
-pio.write_image(fig, 'implantedCuffs_'+eType+'.svg')
+    # format dataframe
+    cuff_DF = pd.DataFrame.from_dict(cuffArray,'index')
+    cuff_DF.columns = cuffNames
+
+    # generate heatmap and edit figure
+    plt.figure(figsize=(10, 2))
+    hmap = sns.heatmap(cuff_DF,cmap='Greys',cbar=False, linewidths=0.5,linecolor=[0,0,0])
+    hmap.set_yticklabels(hmap.get_yticklabels(), rotation=45)
+    plt.show()
+    plt.savefig('implantedCuffs_'+eType+'.svg')
+    plt.savefig('implantedCuffs_'+eType+'.png')
+    plt.close()
