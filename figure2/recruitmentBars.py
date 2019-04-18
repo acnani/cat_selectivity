@@ -1,120 +1,106 @@
 import helperFcns as hf
-import plotly
-import plotly.graph_objs as go
-import numpy as np
-from plotly import tools
+from helperFcns import plt
+import seaborn as sns
+import pandas as pd
 
-eType = 'epineural'
-collapseCuffs = True       # to avoid combining cuffs OR to ignore parent but not child (eg ignore Sensory but not Sural)
+eType = 'penetrating'
+collapseCuffs = True
 ignoreCuffs = ['BiFem']
 
 cuffChildrenDict = hf.getInnervationChildren()
-cuffParentsDict = hf.getCanonicalInnervation()
-cuffCoord = hf.getInnervationTreeCoords()
+cuffParentsDict = hf.getInnervationParents()
 colorList = hf.colorOrder
-allDRG = hf.allDRG
 
 subjectList = hf.getSubjects(eType)
-etypeCuffs = hf.getAllCuffs(subjectList)
-allCuffs = [i for i in hf.allCuffs_mdf if i in etypeCuffs]       # remove distal contact
-targetCuffs = [x for x in allCuffs if x not in ignoreCuffs]      # remove ignore cuffs. keep collapse cuff since we want to request these thresholds
+targetNerveLabels = hf.allCuffs_mdf.keys()
+coactivationDF = pd.DataFrame(0,columns=targetNerveLabels, index=targetNerveLabels)
 
-if collapseCuffs:
-    ignoreCuffs.extend([x for x in hf.combineCuffs.keys() if x != hf.combineCuffs[x]])
+selectiveDF = pd.DataFrame(columns=['DRG', 'nerve'])
+nonSelectiveDF = pd.DataFrame(columns=['DRG', 'nerve'])
 
-validCuffs = [i for i in targetCuffs if i not in ignoreCuffs]    # cuff names after combining
-
-
-selectiveBarCount = np.zeros((len(validCuffs),1))
-nonSelectiveBarCount = np.zeros((len(validCuffs),1))
-
-data_selec = []
-data_nonSelec = []
-allLevels_data_selec = np.zeros((len(validCuffs), 1))
-allLevels_data_nonselec = np.zeros((len(validCuffs), 1))
-coactivationMat = np.zeros((len(validCuffs), len(validCuffs)))
-
-fig = tools.make_subplots(rows=2, cols=1, subplot_titles=['selective counts per DRG','total selective counts'])
-fig2 = tools.make_subplots(rows=2, cols=1, subplot_titles=['non-selective counts per DRG','total non-selective counts'])
-
-for iDRG in allDRG:
-    selectiveBarCount = np.zeros((len(validCuffs), 1))
-    nonSelectiveBarCount = np.zeros((len(validCuffs), 1))
-
-    coactivationMat_perDRG = np.zeros((len(validCuffs), len(validCuffs)))
+for iDRG in hf.allDRG:
+    coactivationDF_perDRG = pd.DataFrame(0,columns=targetNerveLabels, index=targetNerveLabels)
 
     for subject in subjectList:
         # returns all sessions per DRG per subject
-        res2 = hf.sessionPerDRG(subject)  # add arguemnt for penetrating vs epineural
-        res3 = hf.sessionPerElectrodeType(subject)
-        DRGidx = [res2['result'].index(val) for val in res2['result'] if iDRG == val['DRG']]
+        seshPerDRG = hf.sessionPerDRG(subject, eType)  # add argument for penetrating vs epineural
 
-        if len(DRGidx) != 0:
-            if eType in res3.keys():
-                allEtypeSesh = res3[eType]
-                targetSesh = sorted([value for value in allEtypeSesh if value in res2['result'][DRGidx[0]]['session']])
-                # iterate over each session
-                for sesh in targetSesh:
-                    threshDict = hf.thresholdPerCuff(subject, sesh, targetCuffs, collapseCuffs)
-                    allActiveChans = sorted(threshDict.keys())
-                    numActiveChans = len(allActiveChans)
+        if iDRG in seshPerDRG.keys():
 
-                    for iStimChan in allActiveChans:
-                        stimChanDict = threshDict[iStimChan]
-                        allRecruitedCuffs = stimChanDict.keys()
-                        for iActiveCuff in allRecruitedCuffs:
-                            activeChanIdx = validCuffs.index(iActiveCuff)         # row
-                            activeChanAmp = stimChanDict[iActiveCuff]
+            # iterate over each session
+            for iSesh in seshPerDRG[iDRG]:
+                threshDict = hf.thresholdPerCuff(subject, iSesh, ignoreCuffs, collapseCuffs)
+                allActiveChans = sorted(threshDict.keys())
 
-                            coactivatedCuffIdx = [validCuffs.index(val) for val in allRecruitedCuffs if stimChanDict[val] <= activeChanAmp]   # allow counting iActiveCuff so that diagonal is unity
-                            coactivationMat[activeChanIdx, coactivatedCuffIdx] += 1
-                            coactivationMat_perDRG[activeChanIdx, coactivatedCuffIdx] += 1
+                for iStimChan in allActiveChans:
+                    stimChanDict = threshDict[iStimChan]
+                    allRecruitedCuffs = stimChanDict.keys()
+                    for iActiveCuff in allRecruitedCuffs:
+                        activeChanIdx = targetNerveLabels.index(iActiveCuff)         # row
+                        activeChanAmp = stimChanDict[iActiveCuff]
 
-                            coactivatedCuffs = [val for val in allRecruitedCuffs if stimChanDict[val] <= activeChanAmp and val !=iActiveCuff]
+                        coactivatedCuffIdx = [targetNerveLabels.index(val) for val in allRecruitedCuffs if stimChanDict[val] <= activeChanAmp]   # allow counting iActiveCuff so that diagonal is unity
 
-                            # check if parent nerve of active nerve is coactivated
-                            cuffParent = [cuffParentsDict[iActiveCuff]]                 # list of all parents of the active cuff up to the trunk
-                            if cuffParent[0] != '':
-                                cuffParent.append(cuffParentsDict[cuffParent[0]])
-                            notParentCoactive = [value for value in coactivatedCuffs if value not in cuffParent]        # non-parent nerves that are coactivated with the active cuff
+                        for coactiveCuff in allRecruitedCuffs:
+                            if stimChanDict[coactiveCuff] <= activeChanAmp:
+                                coactivationDF_perDRG.loc[iActiveCuff, coactiveCuff] += 1
 
-                            # check if active nerve has a child and whether it is coactivated
-                            if iActiveCuff in cuffChildrenDict.keys():
-                                cuffChild = cuffChildrenDict[iActiveCuff]
-                                notChild = [value for value in notParentCoactive if value not in cuffChild]
-                                notParentCoactive = notChild
+                        coactivatedCuffs = [val for val in allRecruitedCuffs if stimChanDict[val] <= activeChanAmp and val !=iActiveCuff]
 
-                            if len(notParentCoactive)==0:
-                                selectiveBarCount[activeChanIdx] += 1
+                        # check if parent nerve of active nerve is coactivated
+                        cuffParent = [cuffParentsDict[iActiveCuff]]                 # list of all parents of the active cuff up to the trunk
+                        if cuffParent[0] != '':
+                            cuffParent.append(cuffParentsDict[cuffParent[0]])
+                        notParentCoactive = [value for value in coactivatedCuffs if value not in cuffParent]        # non-parent nerves that are coactivated with the active cuff
 
-                            else:
-                                nonSelectiveBarCount[activeChanIdx] += 1
+                        # check if active nerve has a child and whether it is coactivated
+                        if iActiveCuff in cuffChildrenDict.keys():
+                            cuffChild = cuffChildrenDict[iActiveCuff]
+                            notChild = [value for value in notParentCoactive if value not in cuffChild]
+                            notParentCoactive = notChild
 
-    trace1 = go.Bar(y=np.ndarray.tolist(np.transpose(selectiveBarCount))[0], x=validCuffs, name=iDRG, legendgroup = iDRG, marker={'color':colorList[allDRG.index(iDRG)]})
-    trace2 = go.Bar(y=np.ndarray.tolist(np.transpose(nonSelectiveBarCount))[0], x=validCuffs, name=iDRG, legendgroup = iDRG, marker={'color':colorList[allDRG.index(iDRG)]})
-    fig.append_trace(trace1, 1, 1)
-    fig2.append_trace(trace2, 1, 1)
+                        if len(notParentCoactive)==0:
+                            selectiveDF = selectiveDF.append({'DRG':iDRG,'nerve':hf.allCuffs_mdf[iActiveCuff]},ignore_index=True)
+                        else:
+                            nonSelectiveDF = nonSelectiveDF.append({'DRG':iDRG,'nerve':hf.allCuffs_mdf[iActiveCuff]},ignore_index=True)
 
-    allLevels_data_selec += selectiveBarCount
-    allLevels_data_nonselec += nonSelectiveBarCount
+    coactivationDF += coactivationDF_perDRG
+    tmp = coactivationDF_perDRG.loc[:, (coactivationDF_perDRG != 0).any(axis=0)]
+    tmp2 = tmp.loc[(tmp != 0).any(axis=1), :]
+    tmp2.index = [hf.allCuffs_mdf[i] for i in tmp2.columns]
+    tmp2.columns = tmp2.index
+    sns.heatmap(tmp2/tmp2.max(), annot=False, fmt=".1f", linewidths=.5,cmap="Blues_r")
+    plt.savefig(eType + '/' + iDRG + '_coactivation.pdf')
+    plt.savefig(eType + '/' + iDRG + '_coactivation.png')
+    plt.close()
 
-    normVal2 = np.transpose(np.tile(np.max(coactivationMat_perDRG, 0), (len(validCuffs), 1)))
-    hMapMat2 = np.flipud(np.divide(coactivationMat_perDRG, 1) * 100)
-    data2 = [go.Heatmap(z=hMapMat2, y=list(reversed(validCuffs)), x=validCuffs, colorscale=hf.parula)]
-    plotly.offline.plot({'data':data2, 'layout':go.Layout(title=eType + ' ' + iDRG + ' coactivation matrix')}, filename=eType + '_' + iDRG +'_coactivationMat_.html', auto_open=True)
+tmp3 = coactivationDF.loc[:, (coactivationDF != 0).any(axis=0)]
+tmp4 = tmp3.loc[(tmp3 != 0).any(axis=1), :]
+tmp4.index = [hf.allCuffs_mdf[i] for i in tmp4.columns]
+tmp4.columns = tmp4.index
+sns.heatmap(tmp4/tmp4.max(), annot=False, fmt=".1f",)
+plt.savefig(eType + '/' + 'allDRG_coactivation.pdf')
+plt.savefig(eType + '/' + 'allDRG_coactivation.png')
+plt.close()
 
-layout = go.Layout(barmode='group')
+f,ax3 = plt.subplots(2, 1, figsize=(9, 8))
+sns.countplot(x='nerve',hue='DRG',order=tmp4.index,data=selectiveDF, ax=ax3[0])
+sns.countplot(x='nerve',order=tmp4.index,data=selectiveDF, ax=ax3[1])
+plt.savefig(eType + '/' + 'selectiveCounts.pdf')
+plt.savefig(eType + '/' + 'selectiveCounts.png')
+plt.close()
 
-fig.append_trace(go.Bar(y=np.ndarray.tolist(np.transpose(allLevels_data_selec))[0], x=validCuffs, name='selec', showlegend = False), 2, 1)
-fig2.append_trace(go.Bar(y=np.ndarray.tolist(np.transpose(allLevels_data_nonselec))[0], x=validCuffs, name='nonselec', showlegend = False), 2, 1)
+f,axes = plt.subplots(2, 1, figsize=(9, 8))
+sns.countplot(x='nerve',hue='DRG',order=tmp4.index,data=nonSelectiveDF, ax=axes[0])
+sns.countplot(x='nerve',order=tmp4.index,data=nonSelectiveDF, ax=axes[1])
+plt.savefig(eType + '/' + 'nonselectiveCounts.pdf')
+plt.savefig(eType + '/' + 'nonselectiveCounts.png')
+plt.close()
 
-plotly.offline.plot(fig, layout, filename= eType +'_selective_counts_.html')
-plotly.offline.plot(fig2, layout, filename= eType +'_nonselective_counts_.html')
 
-
-normVal = np.transpose(np.tile(np.max(coactivationMat,0),(len(validCuffs),1)))
-hMapMat = np.flipud(np.divide(coactivationMat,normVal)*100)
-
-data = [go.Heatmap(z=hMapMat, y=list(reversed(validCuffs)),x=validCuffs,colorscale=hf.parula)]
-plotly.offline.plot({'data':data, 'layout':go.Layout(title=eType+' coactivation matrix')},filename=eType+'_combo_coactivationMat.html',auto_open=True)
-
+# import plotly
+# import plotly.graph_objs as go
+# import numpy as np
+# from plotly import tools
+# data = [go.Heatmap(z=tmp2, y=tmp2.index,x=tmp2.index,colorscale=hf.parula)]
+# plotly.offline.plot({'data':data, 'layout':go.Layout(title=eType+' coactivation matrix')},filename=eType+'_test.html',auto_open=True)
