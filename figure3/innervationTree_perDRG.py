@@ -7,125 +7,111 @@ import helperFcns as hf
 import numpy as np
 
 eType = 'epineural'
-collapseCuffs = False
+collapseCuffs = True
+ignoreCuffs = ['BiFem']
 
-cuffParentsDict = hf.getCanonicalInnervation()
-cuffDict = cuffParentsDict.keys()
+cuffParentsDict = hf.getInnervationParents()
 cuffCoord = hf.getInnervationTreeCoords()
-allCuffs = hf.allCuffs_mdf.keys()
 subjectList = hf.getSubjects(eType)
 allDRG = hf.allDRG
-
+targetNerveLabels = hf.allCuffs_mdf.keys()
 
 numChanDict= dict.fromkeys(allDRG,{})
 meanAmpDict = dict.fromkeys(allDRG,{})
 for drg in allDRG:
-    numChanDict[drg] = dict.fromkeys(allCuffs,0)
-    for iCuff in allCuffs:
-        meanAmpDict[drg][iCuff] = []
+    numChanDict[drg] = dict.fromkeys(targetNerveLabels,0)
+    meanAmpDict[drg] = {k: [] for k in targetNerveLabels}
 
 
 normFactor = []
 subjectRow = 0
-fig_numCh = tools.make_subplots(rows=len(subjectList), cols=4, subplot_titles=allDRG*4)
-fig_meanA = tools.make_subplots(rows=len(subjectList), cols=4, subplot_titles=allDRG*4)
+fig_numCh = tools.make_subplots(rows=len(subjectList), cols=len(allDRG), subplot_titles=allDRG*len(allDRG))
+fig_meanA = tools.make_subplots(rows=len(subjectList), cols=len(allDRG), subplot_titles=allDRG*len(allDRG))
 
-for subject in subjectList:
-    seshDict = {}
+fig_numChan = tools.make_subplots(rows=1, cols=len(allDRG), subplot_titles=allDRG)
+fig_meanAmp = tools.make_subplots(rows=1, cols=len(allDRG), subplot_titles=allDRG)
 
-    subjectRow = subjectList.index(subject) + 1
+# for subject in subjectList:
+for iDRG in allDRG:
+    for subject in subjectList:
 
-    # returns all sessions per DRG per subject
-    res2 = hf.sessionPerDRG(subject)                       # add arguemnt for penetrating vs epineural
-    res3 = hf.sessionPerElectrodeType(subject)
+        subjectRow = subjectList.index(subject) + 1
 
-    # iterate over each DRG
-    for iDRG in res2['result']:
-        subjectNumChanDict = dict.fromkeys(allCuffs, 0)
-        subjectMeanAmpDict = {}
-        for iCuff in allCuffs:
-            subjectMeanAmpDict[iCuff] = []
+        # returns all sessions per iDRG per subject
+        res2 = hf.sessionPerDRG(subject, eType)
 
-        if iDRG['DRG'] in allDRG:
-            subjectCol = allDRG.index(iDRG['DRG']) + 1
-            allEtypeSesh = res3[eType]
-            targetSesh = sorted([value for value in allEtypeSesh if value in iDRG['session']])
-            # iterate over each session
+    # iterate over each iDRG
+    # for iDRG in res2.keys():
+        subjectNumChanDict = dict.fromkeys(targetNerveLabels, 0)
+        subjectMeanAmpDict = {k: [] for k in targetNerveLabels}
+
+
+        subjectCol = allDRG.index(iDRG) + 1
+        if iDRG in res2.keys():
+            targetSesh = res2[iDRG] #sorted([value for value in allEtypeSesh if value in res2[iDRG]])
+
             for sesh in targetSesh:
-                threshDict = hf.thresholdPerCuff(subject, sesh, allCuffs, collapseCuffs)
+                threshDict = hf.thresholdPerCuff(subject, sesh, ignoreCuffs, collapseCuffs)
                 allActiveChans = sorted(threshDict.keys())
-                numActiveChans = len(allActiveChans)
 
-                if numActiveChans != 0:
+                # if allActiveChans:
+                for iChan in allActiveChans:
+                    # if threshDict[iChan]:
+                    for cuffName in threshDict[iChan].keys():
+                        numChanDict[iDRG][cuffName] += 1
+                        meanAmpDict[iDRG][cuffName].append(threshDict[iChan][cuffName])
 
-                    for iChan in allActiveChans:
-                        if bool(threshDict[iChan]):
-                            resultCuffs = threshDict[iChan].keys()
+                        subjectNumChanDict[cuffName] += 1
+                        subjectMeanAmpDict[cuffName].append(threshDict[iChan][cuffName])
 
-                            for cuffName in resultCuffs:
-                                numChanDict[iDRG['DRG']][cuffName] += 1
-                                meanAmpDict[iDRG['DRG']][cuffName].append(threshDict[iChan][cuffName])
-                                subjectNumChanDict[cuffName] += 1
-                                subjectMeanAmpDict[cuffName].append(threshDict[iChan][cuffName])
-
-            nodeColor = [np.mean(subjectMeanAmpDict[cuff]) for cuff in cuffDict if cuff]
-            figDict_meanAmp = hf.generateInnervationTree(subjectNumChanDict.keys(), nodeColor, 10, showAnnots=False)
+            nodecolor = [np.mean(subjectMeanAmpDict[cuff]) for cuff in targetNerveLabels if subjectMeanAmpDict[cuff]]
+            nodeLabel = [cuff for cuff in targetNerveLabels if subjectMeanAmpDict[cuff]]
+            figDict_meanAmp = hf.generateInnervationTree(nodeLabel, nodecolor, 10, etype=eType)
             [fig_meanA.append_trace(iData, subjectRow, subjectCol) for iData in figDict_meanAmp['data']]
             fig_meanA['layout']['showlegend'] = False
-            for iAnnot in range(len(figDict_meanAmp['layout']['annotations'])):
-                figDict_meanAmp['layout']['annotations'][iAnnot]['xref'] = 'x' + str(subjectCol * 4 + subjectRow)
-                figDict_meanAmp['layout']['annotations'][iAnnot]['yref'] = 'y' + str(subjectCol * 4 + subjectRow)
-            fig_meanA['layout']['annotations'].extend(figDict_meanAmp['layout']['annotations'])
-            fig_meanA['layout']['xaxis' + str(subjectCol)].update(figDict_meanAmp['layout']['xaxis'])
-            fig_meanA['layout']['yaxis' + str(subjectCol)].update(figDict_meanAmp['layout']['yaxis'])
 
-            nodeSize = [subjectNumChanDict[cuff] for cuff in cuffDict]
-            figDict_numChans = hf.generateInnervationTree(subjectNumChanDict.keys(), hf.colorOrder[subjectCol-1], nodeSize, False)
+            nodeSize = [subjectNumChanDict[cuff] for cuff in targetNerveLabels if subjectNumChanDict[cuff] !=0]
+            nodeLabel = [cuff for cuff in targetNerveLabels if subjectNumChanDict[cuff] !=0]
+            figDict_numChans = hf.generateInnervationTree(nodeLabel, hf.colorOrder[subjectCol-1], nodeSize, etype=eType)
             [fig_numCh.append_trace(iData, subjectRow, subjectCol) for iData in figDict_numChans['data']]
             fig_numCh['layout']['showlegend'] = False
-            for iAnnot in range(len(figDict_numChans['layout']['annotations'])):
-                figDict_numChans['layout']['annotations'][iAnnot]['xref'] = 'x' + str(subjectCol*4+subjectRow)
-                figDict_numChans['layout']['annotations'][iAnnot]['yref'] = 'y' + str(subjectCol*4+subjectRow)
-            fig_numCh['layout']['annotations'].extend(figDict_numChans['layout']['annotations'])
-            fig_numCh['layout']['xaxis' + str(subjectCol)].update(figDict_numChans['layout']['xaxis'])
-            fig_numCh['layout']['yaxis' + str(subjectCol)].update(figDict_numChans['layout']['yaxis'])
 
-plotly.offline.plot(fig_numCh, filename='innervationTrees_perDRG\\numChans_' + eType + '_perSub.html')
-plotly.offline.plot(fig_meanA, filename='innervationTrees_perDRG\\meanAmp_' + eType + '_perSub.html')
-# plotly.plotly.image.save_as(fig, filename='finalFigs\\numChanInnervationTrees' + eType + '.svg')
-
-
-
-
-
-fig_numChan = tools.make_subplots(rows=1, cols=4, subplot_titles= allDRG)
-fig_meanAmp = tools.make_subplots(rows=1, cols=4, subplot_titles= allDRG)
-for DRG in allDRG:
-    col = allDRG.index(DRG)
-    nodeColor_meanAmp = [np.mean(meanAmpDict[DRG][cuff]) for cuff in cuffDict if cuff]
-    figDict_meanAmp = hf.generateInnervationTree(numChanDict[DRG].keys(), nodeColor_meanAmp)
-    [fig_meanAmp.append_trace(iData, 1, col + 1) for iData in figDict_meanAmp['data']]
+    drgCol = allDRG.index(iDRG)
+    nodeColor_meanAmp = [np.mean(meanAmpDict[iDRG][cuff]) for cuff in targetNerveLabels if meanAmpDict[iDRG][cuff]]
+    nodeLabel = [cuff for cuff in targetNerveLabels if meanAmpDict[iDRG][cuff]]
+    figDict_meanAmp = hf.generateInnervationTree(nodeLabel, nodeColor_meanAmp,etype=eType)
+    [fig_meanAmp.append_trace(iData, 1, drgCol + 1) for iData in figDict_meanAmp['data']]
     fig_meanAmp['layout']['showlegend'] = False
-    for iAnnot in range(len(nodeColor_meanAmp)):
-        figDict_meanAmp['layout']['annotations'][iAnnot]['xref'] = 'x' + str(col + 1)
-        figDict_meanAmp['layout']['annotations'][iAnnot]['yref'] = 'y' + str(col + 1)
-    fig_meanAmp['layout']['annotations'].extend(figDict_meanAmp['layout']['annotations'])
-    fig_meanAmp['layout']['xaxis' + str(col + 1)].update(figDict_meanAmp['layout']['xaxis'])
-    fig_meanAmp['layout']['yaxis' + str(col + 1)].update(figDict_meanAmp['layout']['yaxis'])
 
-    nodeSize_numChan = [numChanDict[DRG][cuff] for cuff in cuffDict]
-    figDict_numChan = hf.generateInnervationTree(numChanDict[DRG].keys(), hf.colorOrder[col], nodeSize_numChan)
-    [fig_numChan.append_trace(iData, 1, col+1) for iData in figDict_numChan['data']]
+    nodeSize_numChan = [numChanDict[iDRG][cuff] for cuff in targetNerveLabels if numChanDict[iDRG][cuff] != 0]
+    nodeLabel = [cuff for cuff in targetNerveLabels if numChanDict[iDRG][cuff] != 0]
+    figDict_numChan = hf.generateInnervationTree(nodeLabel, hf.colorOrder[drgCol], nodeSize_numChan,etype=eType)
+    [fig_numChan.append_trace(iData, 1, drgCol + 1) for iData in figDict_numChan['data']]
     fig_numChan['layout']['showlegend'] = False
-    for iAnnot in range(len(nodeSize_numChan)):
-        figDict_numChan['layout']['annotations'][iAnnot]['xref'] = 'x' + str(col+1)
-        figDict_numChan['layout']['annotations'][iAnnot]['yref'] = 'y' + str(col+1)
-    fig_numChan['layout']['annotations'].extend(figDict_numChan['layout']['annotations'])
-    fig_numChan['layout']['xaxis' + str(col+1)].update(figDict_numChan['layout']['xaxis'])
-    fig_numChan['layout']['yaxis' + str(col+1)].update(figDict_numChan['layout']['yaxis'])
 
-fig_numChan['layout'].update(height=1000, width=6000)
-fig_meanAmp['layout'].update(height=1000, width=6000)
+if eType == 'epineural':
+    fig_numChan['layout'].update(height=400, width=1300)
+    fig_meanAmp['layout'].update(height=400, width=3000)
+else:
+    fig_numChan['layout'].update(height=1000, width=4500)
+    fig_meanAmp['layout'].update(height=400, width=3000)
 
-plotly.offline.plot(fig_numChan, filename='innervationTrees_perDRG\\numChans_'+eType+'_combined.html')
-plotly.offline.plot(fig_meanAmp, filename='innervationTrees_perDRG\\meanAmp_'+eType+'_combined.html')
+plotly.offline.plot(fig_numChan, filename=eType+'\\perDRG\\numChans_combined.html',auto_open=False)
+plotly.plotly.image.save_as(fig_numChan, filename=eType+'\\perDRG\\numChans_combined.pdf')
+plotly.plotly.image.save_as(fig_numChan, filename=eType+'\\perDRG\\numChans_combined.png')
+
+plotly.offline.plot(fig_meanAmp, filename=eType+'\\perDRG\\meanAmp_combined.html',auto_open=False)
+plotly.plotly.image.save_as(fig_meanAmp, filename=eType+'\\perDRG\\meanAmp_combined.pdf')
+plotly.plotly.image.save_as(fig_meanAmp, filename=eType+'\\perDRG\\meanAmp_combined.png')
+
+plotly.offline.plot(fig_numCh, filename=eType+'\\perDRG\\numChans_perSub.html',auto_open=False)
+plotly.plotly.image.save_as(fig_numCh, filename=eType+'\\perDRG\\numChans_perSub.pdf')
+plotly.plotly.image.save_as(fig_numCh, filename=eType+'\\perDRG\\numChans_perSub.png')
+
+plotly.offline.plot(fig_meanA, filename=eType+'\\perDRG\\meanAmp_perSub.html',auto_open=False)
+plotly.plotly.image.save_as(fig_meanA, filename=eType+'\\perDRG\\meanAmp_perSub.pdf')
+plotly.plotly.image.save_as(fig_meanA, filename=eType+'\\perDRG\\meanAmp_perSub.png')
+
+print 'finished'
+
+
