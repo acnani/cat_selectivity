@@ -3,8 +3,7 @@ import helperFcns as hf
 import seaborn as sns
 import collections
 import pandas as pd
-import matplotlib.pyplot as plt
-plt.rcParams['svg.fonttype'] = 'none'
+from helperFcns import plt
 
 
 for eType in ['epineural', 'penetrating']:
@@ -12,7 +11,7 @@ for eType in ['epineural', 'penetrating']:
     cuffNames = hf.allCuffs_mdf.values()
 
     subjectList = hf.getSubjects(eType)
-    cuffPerSub = hf.cuffsPerSubject2(subjectList)
+    cuffPerSub = hf.cuffsPerSubject(subjectList)
 
     cuffArray = collections.OrderedDict()
     for iSub in subjectList:
@@ -21,12 +20,18 @@ for eType in ['epineural', 'penetrating']:
     # format dataframe
     cuff_DF = pd.DataFrame.from_dict(cuffArray,'index')
     cuff_DF.columns = cuffNames
+    cuff_DF = cuff_DF.loc[:, (cuff_DF != 1).any(axis=0)]
+
+    zm = np.ma.masked_less(cuff_DF.values, 1)
+    x = np.arange(len(cuff_DF.columns) + 1)
+    y = np.arange(len(cuff_DF.index) + 1)
 
     # generate heatmap and edit figure
-    plt.figure(figsize=(10, 2))
-    hmap = sns.heatmap(cuff_DF,cmap='Greys',cbar=False, linewidths=0.5,linecolor=[0,0,0])
+    plt.figure(figsize=(10, 2.5))
+    hmap = sns.heatmap(cuff_DF,cmap='Greys',cbar=False, linewidths=0.5,linecolor=[0,0,0], vmin=3, vmax=5)
     hmap.set_yticklabels(hmap.get_yticklabels(), rotation=45)
-    plt.show()
-    plt.savefig('implantedCuffs_'+eType+'.svg')
+    plt.pcolor(x, y, zm, hatch='//', alpha=0.)
+    # plt.show()
     plt.savefig('implantedCuffs_'+eType+'.png')
+    plt.savefig('implantedCuffs_'+eType+'.pdf')
     plt.close()
