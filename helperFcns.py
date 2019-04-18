@@ -5,6 +5,9 @@ import numpy as np
 import collections
 import plotly.graph_objs as go
 from igraph import *
+import matplotlib.pyplot as plt
+plt.rcParams['svg.fonttype'] = 'none'
+plt.rcParams['pdf.fonttype'] = 42
 
 # constants
 mongohost = "192.168.0.246"
@@ -17,27 +20,51 @@ client = pymongo.MongoClient(mongohost, mongoport)
 db = client.acute
 
 # expt constants
-allDRG = ['DRG - L5','DRG - L6','DRG - L7', 'DRG - S1']
+allDRG = ['DRG - L5','DRG - L6','DRG - L7'] # 'DRG - S1'
+
 # cuff dbName:label
-allCuffs_mdf = collections.OrderedDict([('Femoral_Proximal','Fem'), ('Saph','Sph'), ('VMed','VM'), ('VLat','VL'), ('Sart','Srt'),
-                                        ('Sciatic_Proximal','Sci'),('Tibial','Tib'),('Med_Gas','MG'),('Lat_Gas','LG'),('Dist_Tib','dTib'),
-                                            ('Cmn_Per','CP'),('Dist_Cmn_Per','dCP'),('Dist_Cmn_Per_2','dCP2'),('L_D_Cmn_Per','SP'),('M_D_Cmn_Per','DP'),
-                                            ('BiFem','BF'), ('Sural','Sur'), ('Lat_Cut','LC'), ('Med_Cut','MC'), ('Sens_Branch','Sensory'),])
+allCuffs_mdf = collections.OrderedDict([('Sciatic_Proximal','Sci'),
+                                        ('Tibial','Tib'),
+                                        ('Lat_Gas','LG'),
+                                        ('Med_Gas','MG'),
+                                        ('Dist_Tib','dTib'),
+                                        ('Cmn_Per','CP'),
+                                        ('Dist_Cmn_Per','dCP'),
+                                        ('Dist_Cmn_Per_2','dCP2'),
+                                        ('L_D_Cmn_Per','SP'),
+                                        ('M_D_Cmn_Per','DP'),
+                                        ('BiFem','BF'),
+                                        ('Sural','Sur'),
+                                        ('Lat_Cut','LC'),
+                                        ('Med_Cut','MC'),
+                                        ('Sens_Branch','Sensory'),
+                                        ('Femoral_Proximal', 'Fem'),
+                                        ('Saph', 'Sph'),
+                                        ('VLat', 'VL'),
+                                        ('VMed', 'VM'),
+                                        ('Sart', 'Srt'),
+                                        ])
 
 maxTreeDepth = 4
 
-combineCuffs = {'Sural':'Sens_Branch', 'Lat_Cut':'Sens_Branch', 'Med_Cut':'Sens_Branch', 'Sens_Branch':'Sens_Branch',
-                'Dist_Cmn_Per':'Dist_Cmn_Per', 'Dist_Cmn_Per_2':'Dist_Cmn_Per', 'L_D_Cmn_Per':'Dist_Cmn_Per', 'M_D_Cmn_Per':'Dist_Cmn_Per'}
+combineCuffs = {'Sural':'Sens_Branch',
+                'Lat_Cut':'Sens_Branch',
+                'Med_Cut':'Sens_Branch',
+                'Sens_Branch':'Sens_Branch',
+                'Dist_Cmn_Per':'Dist_Cmn_Per',
+                'Dist_Cmn_Per_2':'Dist_Cmn_Per',
+                'L_D_Cmn_Per':'Dist_Cmn_Per',
+                'M_D_Cmn_Per':'Dist_Cmn_Per'}
 
-epineuralSessions = {'Galactus':[15, 30, 40, 41, 48, 57],
-                     'Hobgoblin':[6, 7, 10, 12, 14, 16, 20, 23],
-                     'HA02':[2, 3, 4],
-                     'HA04':[2, 3, 4]}
+# epineuralSessions = {'Galactus':[15, 30, 40, 41, 48, 57],
+#                      'Hobgoblin':[6, 7, 10, 12, 14, 16, 20, 23],
+#                      'HA02':[2, 3, 4],
+#                      'HA04':[2, 3, 4]}
 
-penetratingSessions = {'Electro':[20, 22, 26, 27, 28, 32],
-                       'Freeze':[55, 56, 59, 60, 61, 63, 68, 999],
-                       'Galactus':[91, 94, 97, 98],
-                       'Hobgoblin':[47, 49, 52]}
+# penetratingSessions = {'Electro':[20, 22, 26, 27, 28, 32],
+#                        'Freeze':[55, 56, 59, 60, 61, 63, 68, 999],
+#                        'Galactus':[91, 94, 97, 98],
+#                        'Hobgoblin':[47, 49, 52]}
 
 def getSubjects(eType):
     if eType == 'epineural':
@@ -47,17 +74,19 @@ def getSubjects(eType):
     else:
         return ['Electro','Freeze','Galactus','Hobgoblin','HA02','HA04']
 
-
-def thresholdPerCuff(sub, session, targetCuffs, combine):
+# animal:DRG(session):channel(block):amp:cuff:cv
+def thresholdPerCuff(sub, session, ignoreCuffList, combine):
+    ignoreCuffList.extend(['Sciatic_Distal','Femoral_Distal'])
     result1 = db.command({
         'aggregate': collection,
         'pipeline': [
             {'$match': {
                 "mdf_def.mdf_type": 'recruitment',
                 "mdf_metadata.is_sig": 1,
+                # "mdf_metadata.is_sig_manual": {"$in":[1, None]},
                 "mdf_metadata.subject": sub,
                 "mdf_metadata.session": session,
-                "mdf_metadata.location":{"$in":targetCuffs}
+                "mdf_metadata.location":{"$nin":ignoreCuffList}
             }},
             {"$group": {
                 "_id": {"cuff": "$mdf_metadata.location",
@@ -75,146 +104,116 @@ def thresholdPerCuff(sub, session, targetCuffs, combine):
     if len(result1['result']) != 0:
         for entry in result1['result']:
             thresholdDict.setdefault(entry['stimChan'], {})
-            if not(entry['cuff'] in ['Sciatic_Distal', 'Femoral_Distal']):
-                if entry['cuff'] in combineCuffs.keys():
-                    if combine:
-                        combinedKey = combineCuffs[entry['cuff']]
-                        thresholdDict[entry['stimChan']].setdefault(combinedKey, [])
-                        tmp = [thresholdDict[entry['stimChan']][combinedKey]]
-                        tmp.append(entry['threshAmp'])
-                        # if tmp[0]:
-                        #     print 'chut'
-                        thresholdDict[entry['stimChan']][combinedKey] = min(tmp)
-                    else:
-                        thresholdDict[entry['stimChan']][entry['cuff']] = entry['threshAmp']
+            # if not(entry['cuff'] in ['Sciatic_Distal', 'Femoral_Distal']):
+            if entry['cuff'] in combineCuffs.keys():
+                if combine:
+                    combinedKey = combineCuffs[entry['cuff']]
+                    thresholdDict[entry['stimChan']].setdefault(combinedKey, [])
+                    tmp = [thresholdDict[entry['stimChan']][combinedKey]]
+                    tmp.append(entry['threshAmp'])
+                    thresholdDict[entry['stimChan']][combinedKey] = min(tmp)
                 else:
                     thresholdDict[entry['stimChan']][entry['cuff']] = entry['threshAmp']
+            else:
+                thresholdDict[entry['stimChan']][entry['cuff']] = entry['threshAmp']
 
     return thresholdDict
 
+def getAllElectrodes():
+    return db[collection].find().distinct('mdf_metadata.electrode')
 
-def sessionPerDRG(subject):         # need to filter for selectivity vs threshold session
-    result1 = db.command({
-        'aggregate': collection,
-        'pipeline': [
-            {'$match': {
-                "mdf_def.mdf_type": 'recruitment',
-                # "mdf_metadata.success": 1,
-                "mdf_metadata.subject": subject
-            }},
-            {"$group": {
-                "_id": {"DRG": "$mdf_metadata.DRG"},
-                "session": {"$addToSet": "$mdf_metadata.session"},
-            }},
-            {"$project": {
-                "_id": 0,
-                "DRG": "$_id.DRG",
-                "session": "$session"
-            }}]})
-    return result1
+def getAllDRG():
+    return db[collection].find({'mdf_def.mdf_type': 'trial'}).distinct('mdf_metadata.location')
 
+def sessionPerDRG(subject, eType):         # need to filter for selectivity vs threshold session
 
-def sessionPerElectrodeType(subject):
-    seshByElec = {}
-    if subject == 'HA04':                           # import did not include electrode type.
-        seshByElec['epineural'] = [2,3,4]
-        return seshByElec
+    if eType == 'penetrating':
+        matchDict = {
+            "mdf_def.mdf_type": 'trial',
+            "mdf_metadata.success": 1,
+            "mdf_metadata.memo": {"$regex": 'Selectivity'},
+            "mdf_metadata.electrode": {"$regex": 'FMA|Utah'},
+            "mdf_metadata.subject": subject,
+            "mdf_metadata.location":{"$in":allDRG}
+        }
+    elif eType == 'epineural':
+        matchDict = {
+            "mdf_def.mdf_type": 'trial',
+            "mdf_metadata.success": 1,
+            "mdf_metadata.memo": {"$regex": 'Selectivity'},
+            "mdf_metadata.electrode": {"$regex": 'Ripple'},
+            "mdf_metadata.subject": subject,
+            "mdf_metadata.location":{"$in":allDRG}
+        }
     else:
-        res2 = db.command({
-                'aggregate' : collection,
-                'pipeline' : [
-                  {'$match' : {
-                      "mdf_def.mdf_type":'trial',
-                      "mdf_metadata.success":1,
-                      "mdf_metadata.subject": subject,
-                    }},
-                  {"$group": {
-                      "_id": {"subject":"$mdf_metadata.subject", "electrodeType":"$mdf_metadata.electrode"},
-                      "sessions": { "$push": "$mdf_metadata.session"},
-                      "memo": {"$push": "$mdf_metadata.memo"}
-                  }},
-                  {"$project": {
-                      "_id": 0,
-                      "subject": "$_id.subject",
-                      "electrodeType": "$_id.electrodeType",
-                      "sessions": "$sessions",
-                      "memo": "$memo"
-                  }}]})
+        raise Exception('invalid electrode type')
 
-        # this is filthy...i should use unwind and regex in the aggregation pipeline
-        for entry in res2['result']:
-            if 'electrodeType' in entry.keys():
-                if 'Utah' in entry['electrodeType'] or 'FMA' in entry['electrodeType']:
-                    for memoidx in range(len(entry['memo'])):
-                        memoLine = entry['memo'][memoidx]
-                        if 'Selectivity' in memoLine:
-                            seshByElec.setdefault('penetrating',[]).append(entry['sessions'][memoidx])
-                    seshByElec['penetrating'] = list(set(seshByElec['penetrating']))
+    if subject == 'HA04':
+        outDict =  {'DRG - L5': [2],
+                    'DRG - L6': [3],
+                    'DRG - L7': [4]}
+    else:
+        result1 = db.command({
+            'aggregate': collection,
+            'pipeline': [
+                {'$match': matchDict},
+                {"$group": {
+                    "_id": {"DRG": "$mdf_metadata.location"},
+                    "session": {"$addToSet": "$mdf_metadata.session"},
+                }},
+                {"$project": {
+                    "_id": 0,
+                    "DRG": "$_id.DRG",
+                    "session": "$session"
+                }}]})
+        outDict = {}
+        for iRes in result1['result']:
+            outDict[iRes['DRG']] = iRes['session']
 
-                elif 'Ripple' in entry['electrodeType']:
-                    for memoidx in range(len(entry['memo'])):
-                        memoLine = entry['memo'][memoidx]
-                        if 'Selectivity' in memoLine:
-                            seshByElec.setdefault('epineural',[]).append(entry['sessions'][memoidx])
-                    seshByElec['epineural'] = list(set(seshByElec['epineural']))
+    return outDict
 
-        return seshByElec
+
+# def getMaxStimAmp(eType):
+#     subList = getSubjects(eType)
+#     return db[collection].find({"mdf_def.mdf_type":'recruitment'},{'mdf_metadata.amplitude':1,'_id':0}).sort('mdf_metadata.amplitude',-1)[0]
 
 
 def getAllCuffs(subList):
-    res1 = db.command({
-            'aggregate' : collection,
-            'pipeline' : [
-              {'$match' : {
-                 "mdf_def.mdf_type":'ENGdata',
-                  "mdf_metadata.subject": {"$in": subList}
-                }},
-              {"$group": {
-                  "_id": {"id": "1"},
-                   "nerves":{"$addToSet": "$mdf_metadata.location"}
-              }},
-            {"$project": {
-                "_id": 0,
-                "nerve": "$nerves",
-                # "count": "$count"
-            }}
-              ]})
+    return db[collection].find({'mdf_def.mdf_type': 'ENGdata', "mdf_metadata.subject": {"$in": subList}}).distinct(
+        'mdf_metadata.location')
+    # res1 = db.command({
+    #         'aggregate' : collection,
+    #         'pipeline' : [
+    #           {'$match' : {
+    #              "mdf_def.mdf_type":'ENGdata',
+    #               "mdf_metadata.subject": {"$in": subList}
+    #             }},
+    #           {"$group": {
+    #               "_id": {"id": "1"},
+    #                "nerves":{"$addToSet": "$mdf_metadata.location"}
+    #           }}
+    #           ]})
 
     # implantedCuffs = [i['nerve'] for i in res1['result']]
-    return res1['result'][0]['nerve']
+    # return res1['result'][0]['nerves']
 
 
 def cuffsPerSubject(subList):
     if not isinstance(subList, list):
         subList = [subList]
 
-    res1 = db.command({
-        'aggregate' : collection,
-        'pipeline' : [
-          {'$match' : {
-             "mdf_def.mdf_type":'ENGdata',
-              "mdf_metadata.subject": {"$in": subList}
-            }},
-          {"$group": {
-              "_id": {"sub": "$mdf_metadata.subject"},
-              "nerves":{"$addToSet": "$mdf_metadata.location"}
-          }},
-          {"$project": {
-              "_id": 0,
-              "subject": "$_id.sub",
-              "nerve": "$nerves",
-              # "count": "$count"
-          }}]})
+    res1 = {}
+    for iSub in subList:
+        res1[iSub] = db[collection].find({"mdf_metadata.subject": iSub, "mdf_def.mdf_type": 'ENGdata'}).distinct(
+            'mdf_metadata.location')
 
-    # implantedCuffs = [i['nerve'] for i in res1['result']]
-    return res1['result']
-
+    return res1
 
 
 
 
 ## Innervation Tree related
-def getCanonicalInnervation():
+def getInnervationParents(): # getCanonicalInnervation
     innervationDict  = {}
     innervationDict['Sciatic_Proximal']= ''
     innervationDict['Cmn_Per']= 'Sciatic_Proximal'
@@ -262,15 +261,15 @@ def getInnervationTreeCoords():
     coords['Tibial'] = [5.4, 3.0]
     coords['BiFem'] = [4.4, 3.0]
     coords['Sural'] = [3.4, 3.0]
-    coords['Lat_Cut'] = [2.4, 3.0]
+    coords['Sens_Branch'] = [2.4, 3.0]
     coords['Med_Cut'] = [1.4, 3.0]
-    coords['Sens_Branch'] = [0.4, 3.0]
+    coords['Lat_Cut'] = [0.4, 3.0]
     coords['Dist_Cmn_Per'] = [8.4, 2.0]
     coords['Dist_Cmn_Per_2'] = [7.4, 2.0]
     coords['L_D_Cmn_Per'] = [8.9, 1.0]
     coords['M_D_Cmn_Per'] = [7.9, 1.0]
     coords['Med_Gas'] = [6.4, 2.0]
-    coords['Lat_Gas'] = [5.4, 2.0]
+    coords['Lat_Gas'] = [5.5, 2.0]
     coords['Dist_Tib'] = [4.4, 2.0]
     coords['Femoral_Proximal'] = [-2.3, 4.0]
     coords['Saph'] = [-0.8, 3.0]
@@ -281,9 +280,9 @@ def getInnervationTreeCoords():
     return coords
 
 
-def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, showAnnots=True):
+def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, etype='epineural'):
 
-    cuffParentsDict = getCanonicalInnervation()
+    cuffParentsDict = getInnervationParents()
     graphEdges = []
     for cuffName in resultCuffs:
         if cuffName in cuffParentsDict.keys():
@@ -308,6 +307,18 @@ def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, showAnnots=True
         Xe += [lay[edge[0]][0], lay[edge[1]][0], None]
         Ye += [lay[edge[0]][1], lay[edge[1]][1], None]
 
+    if isinstance(nodeColor, list):
+        hoverText = ['%s, c%0.1f' % (allCuffs_mdf[x], y) for x,y in zip(resultCuffs,nodeColor)]
+    elif isinstance(nodeSize, list):
+        hoverText = ['%s, c%0.1f' % (allCuffs_mdf[x], y) for x,y in zip(resultCuffs,nodeSize)]
+    else:
+        hoverText = []
+
+    if etype == 'epineural':        # TODO: parametrize this
+        colorMap_max = 300
+    elif etype == 'penetrating':
+        colorMap_max = 50
+
     lines = go.Scatter(x=Xe,
                        y=Ye,
                        mode='lines',
@@ -317,54 +328,28 @@ def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, showAnnots=True
     dots = go.Scatter(x=Xn,
                       y=Yn,
                       mode='markers',
-                      # name='',
-                      marker=dict(symbol='dot',
-                                  size=nodeSize,
+                      marker=dict(size=nodeSize,
                                   color=nodeColor,  # '#DB4551',
+                                  cmax=colorMap_max,cmin=0,
                                   line=dict(color='rgb(50,50,50)', width=1),
                                   colorscale='RdBu',
                                   ),
-                      text=[allCuffs_mdf[x] for x in resultCuffs],
+                      text=hoverText,
                       hoverinfo='text',
                       opacity=1
                       )
 
-    for node in range(len(resultCuffs)):
-        node_info = '%s' %dots['text'][node]
-
-        if isinstance(nodeColor, list):
-            node_info += ', c%0.1f' % nodeColor[node]
-
-        if isinstance(nodeSize, list):
-            node_info += ', s%0.1f' % nodeSize[node]
-
-        dots['text'][node] = str(node_info)
-
-
-
-    annotations = go.Annotations()             # text within circle
-    if showAnnots:
-        for k in range(L):
-            annotations.append(
-                go.Annotation(
-                    text=allCuffs_mdf[resultCuffs[k]],
-                    x=lay[k][0],
-                    y=lay[k][1],
-                    font=dict(color='rgb(250,250,250)', size=10),
-                    showarrow=False))
-
     layout = dict(title='Innervation tree',
-                  annotations=annotations,
                   font=dict(size=12),
                   showlegend=False,
-                  xaxis=go.XAxis(dict(showline=False,zeroline=True,showgrid=False,showticklabels=False, range=[-5,10])),
-                  yaxis=go.YAxis(dict(showline=False,zeroline=True,showgrid=True,showticklabels=False, range=[0.5,5])),
+                  xaxis=dict(showline=False, zeroline=True, showgrid=False, showticklabels=False, range=[-5, 10]),
+                  yaxis=dict(showline=False, zeroline=True, showgrid=True, showticklabels=False, range=[0.5, 5]),
                   margin=dict(l=40, r=40, b=85, t=100),
                   hovermode='closest',
                   plot_bgcolor='rgb(248,248,248)'
                   )
 
-    data = go.Data([lines, dots])
+    data = [lines, dots]
     fig = dict(data=data, layout=layout)
 
     return fig
@@ -436,7 +421,9 @@ colorOrder = ['rgba(31,119,180,1)', 'rgba(255,127,14,1)', 'rgba(44,160,44,1)', '
 
 ## needed to get sessions and uuid per subject per eType for validation
 def getRecruitmentUUIDforValidation(subject, etype):
-    seshByEtype = sessionPerElectrodeType(subject)
+    tmp = sessionPerDRG(subject, etype) #sessionPerElectrodeType(subject)
+    seshByEtype = sum(list(tmp.values()), [])
+
     res2 = db.command({
             'aggregate' : collection,
             'pipeline' : [
