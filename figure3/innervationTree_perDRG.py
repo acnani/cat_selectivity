@@ -58,11 +58,16 @@ for iDRG in allDRG:
                 for iChan in allActiveChans:
                     # if threshDict[iChan]:
                     for cuffName in threshDict[iChan].keys():
+                        if eType == 'epineural':
+                            threshCharge = hf.convertCurrentToCharge(threshDict[iChan][cuffName], subject, sesh)
+                        else:
+                            threshCharge = threshDict[iChan][cuffName]
+
                         numChanDict[iDRG][cuffName] += 1
-                        meanAmpDict[iDRG][cuffName].append(threshDict[iChan][cuffName])
+                        meanAmpDict[iDRG][cuffName].append(threshCharge)
 
                         subjectNumChanDict[cuffName] += 1
-                        subjectMeanAmpDict[cuffName].append(threshDict[iChan][cuffName])
+                        subjectMeanAmpDict[cuffName].append(threshCharge)
 
             nodecolor = [np.mean(subjectMeanAmpDict[cuff]) for cuff in targetNerveLabels if subjectMeanAmpDict[cuff]]
             nodeLabel = [cuff for cuff in targetNerveLabels if subjectMeanAmpDict[cuff]]
