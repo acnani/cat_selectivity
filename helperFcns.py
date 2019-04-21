@@ -582,7 +582,7 @@ def flatten(l):
     return flatList
 
 
-def getCVperAmp(sub, session, nerve):
+def getCVperAmp(sub, session, nerve, stimunit):
     result1 = db.command({
         'aggregate': collection,
         'pipeline': [
@@ -594,19 +594,25 @@ def getCVperAmp(sub, session, nerve):
                 "mdf_metadata.is_sig_manual": {"$in":[1, None]},
             }},
             {"$group": {
-                "_id": {"amp": "$mdf_metadata.amplitude"},
+                "_id": {"amp": "$mdf_metadata.amplitude","sesh":"$mdf_metadata.session"},
                 "cv": {"$push":"$mdf_metadata.cv"},
-                "drg": {"$addToSet": "$mdf_metadata.DRG"},
+                "drg": {"$addToSet": "$mdf_metadata.DRG"},          # since im requesting per DRG, i dont have to worry about push vs add to set. this will always be the same drg
+                # "sesh": {"$push": "$mdf_metadata.session"},
             }},
             {"$project": {
                 "_id": 0,
                 "AMP": "$_id.amp",
                 "CV": "$cv",
-                "DRG": "$drg"
+                "DRG": "$drg",
+                "sesh":"$_id.sesh"
             }}]})
 
     tmpDict = {'Stimulation Amplitude':[], 'Conduction Velocity':[],'Subject':[],'DRG':[]}
     for iRes in result1['result']:
+        if stimunit == 'charge':
+            stimVal = convertCurrentToCharge(iRes['AMP'],sub,iRes['sesh'])
+        else:
+            stimVal = iRes['AMP']
         tmp = iRes['CV']
         if type(tmp) == list:
             CVlist = list(set(flatten(tmp)))
@@ -615,7 +621,7 @@ def getCVperAmp(sub, session, nerve):
         # outDict.setdefault(iRes['AMP'], []).extend(CVlist)
         numCV=len(CVlist)
         tmpDict['Conduction Velocity'].extend(CVlist)
-        tmpDict['Stimulation Amplitude'].extend([iRes['AMP']]*numCV)
+        tmpDict['Stimulation Amplitude'].extend([stimVal]*numCV)
         tmpDict['Subject'].extend([sub] * numCV)
         tmpDict['DRG'].extend(iRes['DRG']*numCV)
 
@@ -663,21 +669,23 @@ def getCVperAmp(sub, session, nerve):
 #     return outDict
 
 
-def generateCVPlots(cvDF, nerveLabel):
+def generateCVPlots(cvDF, nerveLabel, stimunit):
 
     uniqueCVs = sorted(set(cvDF['Conduction Velocity']), reverse=True)
+    maxAmp = int(max(cvDF['Stimulation Amplitude']))
+    plotStep = int(maxAmp/10)
+
     # raw plot with regression (binned amps)
     sns.regplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, y_jitter=2, x_ci='sd')
     plt.suptitle('%s nerve' % nerveLabel)
-    plt.savefig("%s\\rawRegression.png" % (nerveLabel))
+    plt.savefig("%s\\%s_rawRegression.png" % (nerveLabel,stimunit))
     plt.clf()
     plt.close()
 
     # raw data jointplot with regression unbinned amps
-    sns.jointplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, kind='reg', xlim=[0, 370],
-                  ylim=[0, 130])
+    sns.jointplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, kind='reg')
     plt.suptitle('%s nerve' % nerveLabel)
-    plt.savefig("%s\\jointPlot.png" % (nerveLabel))
+    plt.savefig("%s\\%s_jointPlot.png" % (nerveLabel,stimunit))
     plt.clf()
     plt.close()
 
@@ -685,9 +693,9 @@ def generateCVPlots(cvDF, nerveLabel):
     sns.regplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, y_jitter=2, x_ci='sd',
                 fit_reg=False)
     sns.regplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, color='Black', y_jitter=2,
-                x_estimator=np.mean, x_bins=range(0, 350, 30), x_ci='sd')
+                x_estimator=np.mean, x_bins=range(0, maxAmp, plotStep), x_ci='sd')
     plt.suptitle('%s nerve' % nerveLabel)
-    plt.savefig("%s\\binnedRegresion.png" % (nerveLabel))
+    plt.savefig("%s\\%s_binnedRegresion.png" % (nerveLabel,stimunit))
     plt.clf()
     plt.close()
 
@@ -695,7 +703,7 @@ def generateCVPlots(cvDF, nerveLabel):
     sns.stripplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, hue='DRG', orient='h',
                   order=uniqueCVs, hue_order=allDRG, )
     plt.suptitle('%s nerve' % nerveLabel)
-    plt.savefig("%s\\stripPlot.png" % (nerveLabel))
+    plt.savefig("%s\\%s_stripPlot.png" % (nerveLabel,stimunit))
     plt.clf()
     plt.close()
 
@@ -713,7 +721,7 @@ def generateCVPlots(cvDF, nerveLabel):
     sns.catplot(x='Stimulation Amplitude', y='Conduction Velocity', orient='h', kind='box', hue='DRG',
                 hue_order=allDRG, data=cvDF, order=uniqueCVs, ax=boxAx[1])  # violin plot per DRG
     f1.suptitle('%s nerve' % nerveLabel)
-    f1.savefig("%s\\boxPlot.png" % (nerveLabel))
+    f1.savefig("%s\\%s_boxPlot.png" % (nerveLabel,stimunit))
     f1.clf()
     plt.close()
 
@@ -724,6 +732,11 @@ def generateCVPlots(cvDF, nerveLabel):
     sns.catplot(x='Stimulation Amplitude', y='Conduction Velocity', orient='h', kind='violin', hue='DRG',
                 hue_order=allDRG, data=cvDF, order=uniqueCVs, ax=violinAx[1])  # violin plot per DRG
     f2.suptitle('%s nerve' % nerveLabel)
-    f2.savefig("%s\\violinPlot.png" % (nerveLabel))
+    f2.savefig("%s\\%s_violinPlot.png" % (nerveLabel,stimunit))
     f2.clf()
     plt.close()
+
+    # vertical bar plots
+    # cvDF['Stimulation Bin'] = pd.cut(cvDF['Stimulation Amplitude'],range(0,46,4))
+    # sns.catplot(x='Stimulation Bin', y='Conduction Velocity', data=cvDF, kind='box', ax=boxAx[1])  # violin plot
+
