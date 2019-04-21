@@ -3,7 +3,7 @@ import plotly
 from plotly import tools
 import plotly.graph_objs as go
 import math
-from helperFcns import CVPerAmplitude, sessionPerDRG, getCVperAmp, flatten,epineuralSessions, penetratingSessions, allDRG, getCVatThresh
+import helperFcns as hf
 import seaborn as sns; sns.set(style="white", color_codes=True)
 from scipy import stats
 import numpy as np
@@ -11,37 +11,23 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 eType = 'epineural'
+stimUnits = 'charge'
+subjectList = hf.getSubjects(eType)
 
 
-if eType == 'epineural':
-    seshDict = epineuralSessions
-elif eType == 'penetrating':
-    seshDict = penetratingSessions
 
-for nerve in ['Sciatic', 'Femoral']:
-    tmpAllDRG = {'Conduction Velocity': [], 'Stimulation Amplitude': []}
-    for drg in allDRG:
-        tmp = {'Conduction Velocity': [], 'Stimulation Amplitude': []}
-        for iSub in seshDict.keys():
-            CVdict = getCVperAmp(iSub, seshDict[iSub], nerve, drg)
-            # CVdict = getCVatThresh(iSub, seshDict[iSub], nerve, drg)
-            if CVdict:
-                for iKey in CVdict.keys():
-                    uniqCVs = CVdict[iKey]
-                    numCVs = len(uniqCVs)
-                    tmp['Stimulation Amplitude'].extend([iKey] * numCVs)
-                    tmp['Conduction Velocity'].extend(uniqCVs)
-                    tmpAllDRG['Stimulation Amplitude'].extend([iKey] * numCVs)
-                    tmpAllDRG['Conduction Velocity'].extend(uniqCVs)
 
-        tmpDF = pd.DataFrame(tmp)
-        # if tmpDF.size:
-        #     g = sns.jointplot('Stimulation Amplitude', 'Conduction Velocity', data=tmpDF, kind="reg", color="b", height=7, ylim=(0, 140), xlim=(-2, 400),)
-        #     g.savefig("%s_%s_CV.png" % (nerve, drg))
+tmpAllCV_DF = pd.DataFrame({'Stimulation Amplitude':[], 'Conduction Velocity':[],'Subject':[],'DRG':[]})
+for nerve in ['Femoral', 'Sciatic']:
+    tmpAllDRG_DF = pd.DataFrame({'Stimulation Amplitude':[], 'Conduction Velocity':[],'Subject':[],'DRG':[]})
+    for iSub in subjectList:
+        seshPerDRG = hf.sessionPerDRG(iSub, eType)
+        for drg in seshPerDRG.keys():
+            tmpAllDRG_DF = tmpAllDRG_DF.append(hf.getCVperAmp(iSub, seshPerDRG[drg], nerve, stimUnits),ignore_index=True)
 
-    tmpAllDRGDF = pd.DataFrame(tmpAllDRG)
-    g = sns.jointplot('Stimulation Amplitude', 'Conduction Velocity', data=tmpAllDRGDF, kind="reg", color="b", height=7, ylim=(0, 140), xlim=(-2, 400))
-    g.fig.suptitle('%s nerve' %nerve)
-    g.savefig("%s_CV.png" % (nerve))
+    hf.generateCVPlots(tmpAllDRG_DF,nerve, stimUnits)
+    tmpAllCV_DF = tmpAllCV_DF.append(tmpAllDRG_DF)
+
+hf.generateCVPlots(tmpAllCV_DF, 'combined',stimUnits)
 
 print 'done'
