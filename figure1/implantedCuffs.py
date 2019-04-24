@@ -30,6 +30,7 @@ for eType in ['epineural', 'penetrating']:
     plt.figure(figsize=(10, 2.5))
     hmap = sns.heatmap(cuff_DF,cmap='Greys',cbar=False, linewidths=0.5,linecolor=[0,0,0], vmin=3, vmax=5)
     hmap.set_yticklabels(hmap.get_yticklabels(), rotation=45)
+    hmap.set_xticklabels(hmap.get_xticklabels(), rotation=90)
     plt.pcolor(x, y, zm, hatch='//', alpha=0.)
     # plt.show()
     plt.savefig('implantedCuffs_'+eType+'.png')
