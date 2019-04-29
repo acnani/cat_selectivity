@@ -60,14 +60,23 @@ combineCuffs = {'Sural':'Sens_Branch',
                 'L_D_Cmn_Per':'Dist_Cmn_Per',
                 'M_D_Cmn_Per':'Dist_Cmn_Per'}
 
+agonists = {'VMed':'VLat',
+            'VLat':'VMed',
+            'Med_Gas':'Lat_Gas',
+            'Lat_Gas':'Med_Gas'}
+
 # usec obtained from MATLAB snippet:
 # for i = [6, 7, 10, 12, 14, 16, 20, 23]
 #     asd = mdf.load('subject','Hobgoblin','mdf_type','trial','session',i);
 #     disp(asd(1).md.location)
 #     asd(1).stimChan.stimWform(1).data~=0
 # end
-PWbySession = {'Galactus':{15:204.8, 30:81.92, 40:81.92, 41:81.92, 48:81.92, 57:81.92},
-                'Hobgoblin':{6:81.92, 7:81.92, 10:81.92, 12:81.92, 14:81.92, 16:81.92, 20:81.92, 23:81.92},
+PWbySession = {'Electro':{20:204.8, 22:204.8, 26:204.8, 27:204.8, 28:204.8, 32:204.8},
+               'Freeze':{55:204.8, 56:204.8, 59:204.8, 60:204.8, 61:204.8, 63:204.8, 68:204.8, 999:204.8},
+                'Galactus':{15:204.8, 30:81.92, 40:81.92, 41:81.92, 48:81.92, 57:81.92,
+                           91:81.92, 94:81.92, 97:81.92, 98:81.92},
+                'Hobgoblin':{6:81.92, 7:81.92, 10:81.92, 12:81.92, 14:81.92, 16:81.92, 20:81.92, 23:81.92,
+                             47:81.92, 49:81.92, 52:81.92},
                 'HA02':{2:204.8, 3:204.8, 4:204.8},
                 'HA04':{2:80, 3:80, 4:80}}
 
@@ -90,47 +99,64 @@ def getSubjects(eType):
         return ['Electro','Freeze','Galactus','Hobgoblin','HA02','HA04']
 
 # animal:DRG(session):channel(block):amp:cuff:cv
-def thresholdPerCuff(sub, session, ignoreCuffList, combine):
+def thresholdPerCuff(sub, session, ignoreCuffList, combine, stimUnits='amplitude'):
     ignoreCuffList.extend(['Sciatic_Distal','Femoral_Distal'])
     result1 = db.command({
         'aggregate': collection,
         'pipeline': [
             {'$match': {
                 "mdf_def.mdf_type": 'recruitment',
-                "mdf_metadata.is_sig": 1,
-                "mdf_metadata.is_sig_manual": {"$in":[1, None]},
+                # "mdf_metadata.is_sig": 1,
+                # "mdf_metadata.is_sig_manual": {"$in":[1, None]},
                 "mdf_metadata.subject": sub,
                 "mdf_metadata.session": session,
                 "mdf_metadata.location":{"$nin":ignoreCuffList}
             }},
             {"$group": {
                 "_id": {"cuff": "$mdf_metadata.location",
-                        "stimChan": "$mdf_metadata.stimChan"},
+                        "stimChan": "$mdf_metadata.stimChan",
+                        'is_sig':'$mdf_metadata.is_sig',
+                        'is_sig_manual':'$mdf_metadata.is_sig_manual'},
                 "threshAmp": {"$min": "$mdf_metadata.amplitude"}
             }},
             {"$project": {
                 "_id": 0,
+                'sig':"$_id.is_sig",
+                'sig_manual':"$_id.is_sig_manual",
                 "stimChan": "$_id.stimChan",
                 "cuff": "$_id.cuff",
-                "threshAmp": "$threshAmp"
+                "threshAmp": "$threshAmp",
             }}]})
 
     thresholdDict = {}
     if len(result1['result']) != 0:
-        for entry in result1['result']:
-            thresholdDict.setdefault(entry['stimChan'], {})
-            # if not(entry['cuff'] in ['Sciatic_Distal', 'Femoral_Distal']):
-            if entry['cuff'] in combineCuffs.keys():
-                if combine:
-                    combinedKey = combineCuffs[entry['cuff']]
-                    thresholdDict[entry['stimChan']].setdefault(combinedKey, [])
-                    tmp = [thresholdDict[entry['stimChan']][combinedKey]]
-                    tmp.append(entry['threshAmp'])
-                    thresholdDict[entry['stimChan']][combinedKey] = min(tmp)
-                else:
-                    thresholdDict[entry['stimChan']][entry['cuff']] = entry['threshAmp']
-            else:
-                thresholdDict[entry['stimChan']][entry['cuff']] = entry['threshAmp']
+            for entry in result1['result']:
+                if ('sig_manual' in entry.keys() and entry['sig_manual'] == 1) or ('sig_manual' not in entry.keys() and entry['sig'] == 1):
+                    thresholdDict.setdefault(entry['stimChan'], {})
+                    # if not(entry['cuff'] in ['Sciatic_Distal', 'Femoral_Distal']):
+                    if stimUnits =='charge':
+                        stimVal = convertCurrentToCharge(entry['threshAmp'],sub, session)
+                    else:
+                        stimVal = entry['threshAmp']
+
+                    if entry['cuff'] in combineCuffs.keys():
+                        if combine:
+                            combinedKey = combineCuffs[entry['cuff']]
+                            thresholdDict[entry['stimChan']].setdefault(combinedKey, 999)
+                            tmp = [thresholdDict[entry['stimChan']][combinedKey]]
+                            tmp.append(stimVal)
+                            thresholdDict[entry['stimChan']][combinedKey] = min(tmp)
+                        else:
+                            # in case sig_manual is 1 sig is 1 is greater than sig manual =1 and sig =0, the threshold will be overwritten to a higher value
+                            thresholdDict[entry['stimChan']].setdefault([entry['cuff']],999)
+                            tmp = thresholdDict[entry['stimChan']][entry['cuff']]
+                            thresholdDict[entry['stimChan']][entry['cuff']] = min(tmp, stimVal)
+                            thresholdDict[entry['stimChan']][entry['cuff']] = stimVal
+                    else:
+                        thresholdDict[entry['stimChan']].setdefault(entry['cuff'], 999)
+                        tmp = thresholdDict[entry['stimChan']][entry['cuff']]
+                        thresholdDict[entry['stimChan']][entry['cuff']] = min(tmp, stimVal)
+                        # thresholdDict[entry['stimChan']][entry['cuff']] = stimVal
 
     return thresholdDict
 
@@ -200,8 +226,12 @@ def getSurveyAmplitude(subj, sesh):
     else:
         memoField = db[collection].find({"mdf_def.mdf_type": 'trial', "mdf_metadata.subject": subj, "mdf_metadata.session": sesh,'mdf_metadata.memo':{'$regex':'survey'}},
             {"mdf_metadata.memo": 1})
+        if memoField.count():
+            return int(memoField[0]['mdf_metadata']['memo'].split()[-2])
+        else:
+            memoField2 = db[collection].find({"mdf_def.mdf_type": 'recruitment', "mdf_metadata.subject": subj, "mdf_metadata.session": 27},{"_id": 0, "mdf_metadata.amplitude": 1}).distinct("mdf_metadata.amplitude")
+            return np.ceil(max(list(memoField2)))
 
-        return int(memoField[0]['mdf_metadata']['memo'].split()[-2])
 
 
 def getBinarySearchParams(subject, eType):
@@ -228,7 +258,10 @@ def getBinarySearchParams(subject, eType):
             }}
             ]})
     resolutionVal = {}
-    resolutionVal['totalElecs'] = len(allSesh)*4
+    if eType == 'epineural':
+        resolutionVal['totalElecs'] = len(allSesh)*4
+    else:
+        resolutionVal['totalElecs'] = len(allSesh) *32
     for iRes in result1['result']:
         if len(iRes['stimAmp'])>1:
             resolution_amp_uA = np.min(np.diff(sorted(iRes['stimAmp'])))
@@ -243,6 +276,30 @@ def getBinarySearchParams(subject, eType):
 
     return resolutionVal
 
+
+
+def getSingleAmplitudeChannels(subject, sesh):
+    result1 = db.command({
+        'aggregate': collection,
+        'pipeline': [
+            {'$match': {
+                "mdf_metadata.subject": subject,
+                "mdf_metadata.session": sesh,   #{'$in': [20, 22, 26, 27, 28, 32]},
+                "mdf_def.mdf_type": 'recruitment',
+            }},
+            {"$group": {
+                "_id": {"stimChan": "$mdf_metadata.stimChan"},  #, 'sesh': "$mdf_metadata.session"},
+                "threshAmp": {"$addToSet": "$mdf_metadata.amplitude"},
+            }},
+        ]})
+
+    seshChanDict = []
+    for i in sorted(result1['result']):
+        if len(i['threshAmp']) == 1:
+            # seshChanDict.setdefault([i['_id']['sesh']],[]).append(i['_id']['stimChan'])
+            seshChanDict.append(i['_id']['stimChan'])
+
+    return seshChanDict
 
 
 def getAllCuffs(subList):
@@ -348,7 +405,7 @@ def getInnervationTreeCoords():
     return coords
 
 
-def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, etype='epineural'):
+def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, stimUnits='amplitude', eType='epineural'):
 
     cuffParentsDict = getInnervationParents()
     graphEdges = []
@@ -382,10 +439,16 @@ def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, etype='epineura
     else:
         hoverText = []
 
-    if etype == 'epineural':        # TODO: parametrize this
-        colorMap_max = 60       # charge
-    elif etype == 'penetrating':
-        colorMap_max = 40       # current
+    if stimUnits == 'charge':
+        if eType == 'epineural':
+            colorMap_max = 35
+        else:
+            colorMap_max = 10
+    else:                               # current
+        if eType == 'epineural':
+            colorMap_max = 300
+        else:
+            colorMap_max = 40
 
     lines = go.Scatter(x=Xe,
                        y=Ye,
@@ -398,9 +461,10 @@ def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, etype='epineura
                       mode='markers',
                       marker=dict(size=nodeSize,
                                   color=nodeColor,  # '#DB4551',
-                                  cmax=colorMap_max,cmin=0,
+                                  cmax=colorMap_max,cmin =0,
                                   line=dict(color='rgb(50,50,50)', width=1),
                                   colorscale='RdBu',
+                                  colorbar=dict(thickness=20)
                                   ),
                       text=hoverText,
                       hoverinfo='text',
@@ -410,8 +474,8 @@ def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, etype='epineura
     layout = dict(title='Innervation tree',
                   font=dict(size=12),
                   showlegend=False,
-                  xaxis=dict(showline=False, zeroline=True, showgrid=False, showticklabels=False, range=[-5, 10]),
-                  yaxis=dict(showline=False, zeroline=True, showgrid=True, showticklabels=False, range=[0.5, 5]),
+                  xaxis=dict(range=[-5, 10], showline=False, zeroline=True, showgrid=False, showticklabels=False, ),
+                  yaxis=dict(range=[0.5, 5], showline=False, zeroline=True, showgrid=True, showticklabels=False, ),
                   margin=dict(l=40, r=40, b=85, t=100),
                   hovermode='closest',
                   plot_bgcolor='rgb(248,248,248)'
@@ -624,88 +688,103 @@ def getCVperAmp(sub, session, nerve, stimunit):
         tmpDict['Stimulation Amplitude'].extend([stimVal]*numCV)
         tmpDict['Subject'].extend([sub] * numCV)
         tmpDict['DRG'].extend(iRes['DRG']*numCV)
+        tmpDict['Threshold'] = 'all'
 
     outDF = pd.DataFrame.from_dict(tmpDict)
     return outDF
 
 
-# def getCVatThresh(sub, session, nerve,DRG):
-#     result1 = db.command({
-#         'aggregate': collection,
-#         'pipeline': [
-#             {'$match': {
-#                 "mdf_metadata.subject": sub,
-#                 "mdf_metadata.session": {'$in':session},
-#                 "mdf_metadata.DRG": DRG,
-#                 "mdf_metadata.location": nerve,
-#                 "mdf_def.mdf_type": 'CV',
-#                 "mdf_metadata.is_sig_manual": 1,
-#             }},
-#             {"$group": {
-#                 "_id": {"stimChan": "$mdf_metadata.stimChan"},
-#                 "threshAmp": {"$min": "$mdf_metadata.amplitude"}
-#             }},
-#     ]})
-#
-#     outDict = {}
-#     for iVal in result1['result']:
-#         tmp = db[collection].distinct("mdf_metadata.cv", {"mdf_metadata.subject": sub,
-#                                     "mdf_metadata.session": {'$in':session},
-#                                     "mdf_metadata.DRG": DRG,
-#                                     "mdf_metadata.location": nerve,
-#                                     "mdf_def.mdf_type": 'CV',
-#                                     "mdf_metadata.is_sig_manual": 1,
-#                                     "mdf_metadata.stimChan":iVal['_id']['stimChan'],
-#                                     "mdf_metadata.amplitude": {"$lt":iVal['threshAmp'] + 0.01},
-#                                     # "mdf_metadata.amplitude": {"$gt":iVal['threshAmp'] - 0.01},
-#                                   })
-#         if tmp and not('999' in tmp):
-#             if type(tmp) == list:
-#                 CVlist = [max(flatten(tmp))]
-#             else:
-#                 CVlist = tmp
-#             outDict.setdefault(iVal['threshAmp'], []).extend(CVlist)
-#
-#     return outDict
+def getCVatThresh(sub, session, nerve,stimunit):
+    result1 = db.command({
+        'aggregate': collection,
+        'pipeline': [
+            {'$match': {
+                "mdf_metadata.subject": sub,
+                "mdf_metadata.session": {'$in':session},
+                # "mdf_metadata.DRG": DRG,
+                "mdf_metadata.location": nerve,
+                "mdf_def.mdf_type": 'CV',
+                "mdf_metadata.is_sig_manual": 1,
+            }},
+            {"$group": {
+                "_id": {"stimChan": "$mdf_metadata.stimChan",'sesh':"$mdf_metadata.session"},
+                "threshAmp": {"$min": "$mdf_metadata.amplitude"},
+                "drg": {"$addToSet": "$mdf_metadata.DRG"},
+            }},
+    ]})
+
+    outDict = {'Stimulation Amplitude':[], 'Conduction Velocity':[],'Subject':[],'DRG':[]}
+    for iVal in result1['result']:
+        tmp = db[collection].distinct("mdf_metadata.cv", {"mdf_metadata.subject": sub,
+                                    "mdf_metadata.session": iVal['_id']['sesh'],
+                                    # "mdf_metadata.DRG": DRG,
+                                    "mdf_metadata.location": nerve,
+                                    "mdf_def.mdf_type": 'CV',
+                                    "mdf_metadata.is_sig_manual": 1,
+                                    "mdf_metadata.stimChan":iVal['_id']['stimChan'],
+                                    "mdf_metadata.amplitude": {"$lte":iVal['threshAmp'] + 1, "$gte": iVal['threshAmp'] - 1},
+                                                          })
+        if tmp and not('999' in tmp):
+
+            if stimunit == 'charge':
+                stimVal = convertCurrentToCharge(iVal['threshAmp'], sub, iVal['_id']['sesh'])
+            else:
+                stimVal = iVal['threshAmp']
+
+            if type(tmp) == list:
+                CVlist = list(set(flatten(tmp)))
+            else:
+                CVlist = list(set(tmp))
+
+            numCV = len(CVlist)
+
+            outDict['Conduction Velocity'].extend(CVlist)
+            outDict['Stimulation Amplitude'].extend([stimVal]*numCV)
+            outDict['Subject'].extend([sub] * numCV)
+            outDict['DRG'].extend(iVal['drg'] * numCV)
+            outDict['Threshold'] = 'thresh'
+
+    outDF = pd.DataFrame.from_dict(outDict)
+    return outDF
 
 
 def generateCVPlots(cvDF, nerveLabel, stimunit):
 
     uniqueCVs = sorted(set(cvDF['Conduction Velocity']), reverse=True)
-    maxAmp = int(max(cvDF['Stimulation Amplitude']))
-    plotStep = int(maxAmp/10)
 
     # raw plot with regression (binned amps)
-    sns.regplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, y_jitter=2, x_ci='sd')
-    plt.suptitle('%s nerve' % nerveLabel)
-    plt.savefig("%s\\%s_rawRegression.png" % (nerveLabel,stimunit))
-    plt.clf()
-    plt.close()
+    # sns.regplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, y_jitter=2, x_ci='sd')
+    # plt.suptitle('%s nerve' % nerveLabel)
+    # plt.savefig("%s\\%s\\%s_rawRegression.png" % (rootFolder,nerveLabel,stimunit))
+    # plt.clf()
+    # plt.close()
 
     # raw data jointplot with regression unbinned amps
-    sns.jointplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, kind='reg')
-    plt.suptitle('%s nerve' % nerveLabel)
-    plt.savefig("%s\\%s_jointPlot.png" % (nerveLabel,stimunit))
-    plt.clf()
-    plt.close()
+    # sns.jointplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, kind='reg')
+    # plt.suptitle('%s nerve' % nerveLabel)
+    # plt.savefig("%s\\%s\\%s_jointPlot.png" % (rootFolder,nerveLabel,stimunit))
+    # plt.clf()
+    # plt.close()
 
     # raw data plot with regression (binned amps)
-    sns.regplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, y_jitter=2, x_ci='sd',
-                fit_reg=False)
-    sns.regplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, color='Black', y_jitter=2,
-                x_estimator=np.mean, x_bins=range(0, maxAmp, plotStep), x_ci='sd')
-    plt.suptitle('%s nerve' % nerveLabel)
-    plt.savefig("%s\\%s_binnedRegresion.png" % (nerveLabel,stimunit))
-    plt.clf()
-    plt.close()
+    # maxAmp = int(max(cvDF['Stimulation Amplitude']))
+    # plotStep = int(maxAmp/10)
+    # sns.regplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, y_jitter=2, x_ci='sd',
+    #             fit_reg=False)
+    # sns.regplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, color='Black', y_jitter=2,
+    #             x_estimator=np.mean, x_bins=range(0, maxAmp, plotStep), x_ci='sd')
+    # plt.suptitle('%s nerve' % nerveLabel)
+    # plt.savefig("%s\\%s\\%s_binnedRegresion.png" % (rootFolder,nerveLabel,stimunit))
+    # plt.clf()
+    # plt.close()
 
     # raw plot per DRG with Conduction Velocity as categorical variable
-    sns.stripplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, hue='DRG', orient='h',
-                  order=uniqueCVs, hue_order=allDRG, )
-    plt.suptitle('%s nerve' % nerveLabel)
-    plt.savefig("%s\\%s_stripPlot.png" % (nerveLabel,stimunit))
-    plt.clf()
-    plt.close()
+    # sns.stripplot(x='Stimulation Amplitude', y='Conduction Velocity', data=cvDF, hue='DRG', orient='h',
+    #               order=uniqueCVs, hue_order=allDRG, )
+    # plt.suptitle('%s nerve' % nerveLabel)
+    # plt.savefig("%s\\%s\\%s_stripPlot.png" % (rootFolder,nerveLabel,stimunit))
+    # plt.clf()
+    # plt.close()
 
     # # regression per DRG
     # for iDRG in allDRG:
@@ -715,24 +794,25 @@ def generateCVPlots(cvDF, nerveLabel, stimunit):
     # plt.close()
 
     # box plot
-    f1, boxAx = plt.subplots(1, 2, figsize=(14, 9))
-    sns.catplot(x='Stimulation Amplitude', y='Conduction Velocity', orient='h', kind='box', data=cvDF,
-                order=uniqueCVs, ax=boxAx[0])  # violin plot
-    sns.catplot(x='Stimulation Amplitude', y='Conduction Velocity', orient='h', kind='box', hue='DRG',
-                hue_order=allDRG, data=cvDF, order=uniqueCVs, ax=boxAx[1])  # violin plot per DRG
-    f1.suptitle('%s nerve' % nerveLabel)
-    f1.savefig("%s\\%s_boxPlot.png" % (nerveLabel,stimunit))
-    f1.clf()
-    plt.close()
+    # f1, boxAx = plt.subplots(1, 2, figsize=(14, 9))
+    # sns.catplot(x='Stimulation Amplitude', y='Conduction Velocity', orient='h', kind='box', data=cvDF,
+    #             order=uniqueCVs, ax=boxAx[0])  # violin plot
+    # sns.catplot(x='Stimulation Amplitude', y='Conduction Velocity', orient='h', kind='box', hue='DRG',
+    #             hue_order=allDRG, data=cvDF, order=uniqueCVs, ax=boxAx[1])  # violin plot per DRG
+    # f1.suptitle('%s nerve' % nerveLabel)
+    # f1.savefig("%s\\%s\\%s_boxPlot.png" % (rootFolder,nerveLabel,stimunit))
+    # f1.clf()
+    # plt.close()
 
     # violin plot
+
     f2, violinAx = plt.subplots(1, 2, figsize=(14, 9))
     sns.catplot(x='Stimulation Amplitude', y='Conduction Velocity', orient='h', kind='violin', data=cvDF,
                 order=uniqueCVs, ax=violinAx[0])  # violin plot
     sns.catplot(x='Stimulation Amplitude', y='Conduction Velocity', orient='h', kind='violin', hue='DRG',
                 hue_order=allDRG, data=cvDF, order=uniqueCVs, ax=violinAx[1])  # violin plot per DRG
     f2.suptitle('%s nerve' % nerveLabel)
-    f2.savefig("%s\\%s_violinPlot.png" % (nerveLabel,stimunit))
+    f2.savefig("%s_%s_violinPlot.png" % (nerveLabel,stimunit))
     f2.clf()
     plt.close()
 
