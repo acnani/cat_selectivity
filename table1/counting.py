@@ -10,10 +10,10 @@ for iSub in subjectList:
     print iSub
     thresholdRes[iSub] = hf.getBinarySearchParams(iSub,eType)
 DF = pd.DataFrame.from_dict(thresholdRes).transpose()
-tmp = pd.read_csv('..\\figure2\\selective_counts.csv',index_col=0)
+tmp = pd.read_csv('..\\figure2\\'+eType+'\\selective_counts.csv',index_col=0)
 
 binarySummary = pd.concat([DF,tmp],1)
-binarySummary.to_csv('binarySearch_summary.csv')
+binarySummary.to_csv(eType+'_binarySearch_summary.csv')
 
 print binarySummary
 
