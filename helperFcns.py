@@ -335,7 +335,6 @@ def cuffsPerSubject(subList):
 
 
 
-
 ## Innervation Tree related
 def getInnervationParents(): # getCanonicalInnervation
     innervationDict  = {}
@@ -488,7 +487,6 @@ def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, stimUnits='ampl
 
 
 
-
 ## create heatmap colormap
 def createParulaCMAP():
     cm_data = [[0.2081, 0.1663, 0.5292], [0.2116238095, 0.1897809524, 0.5776761905],
@@ -581,54 +579,6 @@ def getRecruitmentUUIDforValidation(subject, etype):
     else:
         print 'all subjects validated'
 
-
-# animal:DRG(session):channel(block):amp:cuff:cv
-# def CVPerAmplitude(sub, session):
-#     result1 = db.command({
-#         'aggregate': collection,
-#         'pipeline': [
-#             {'$match': {
-#                 "mdf_def.mdf_type": 'CV',
-#                 # "mdf_metadata.is_sig": 1,
-#                 "mdf_metadata.subject": sub,
-#                 "mdf_metadata.session": session
-#             }},
-#             {"$group": {
-#                 "_id": {"cuff": "$mdf_metadata.location",
-#                         "stimChan": "$mdf_metadata.stimChan"},
-#                 "threshAmp": {"$push": "$mdf_metadata.amplitude"},
-#                 "CV": {"$push": "$mdf_metadata.cv"}
-#             }},
-#             {"$project": {
-#                 "_id": 0,
-#                 "stimChan": "$_id.stimChan",
-#                 "cuff": "$_id.cuff",
-#                 "threshAmp": "$threshAmp",
-#                 "CV": "$CV"
-#             }}]})
-#
-#     thresholdDict = {}      # thresholdDict[23]['Sciatic'][amps]
-#                             #                             [CVs]
-#                             #                  ['Distal']
-#
-#     if len(result1['result']) != 0:
-#         for entry in result1['result']:
-#             thresholdDict.setdefault(entry['stimChan'], {})
-#
-#             amplitudes = []
-#             condVels = []
-#             for (amp, CV) in zip(entry['threshAmp'], entry['CV']):
-#                 if type(CV) == list:
-#                     amplitudes.extend([amp] * len(CV))
-#                     condVels.extend(CV)
-#                 else:
-#                     amplitudes.extend([amp])
-#                     condVels.append(CV)
-#             thresholdDict[entry['stimChan']].setdefault(entry['cuff'], {'amps': [], 'CV': []})
-#             thresholdDict[entry['stimChan']][entry['cuff']]['amps'].append(amplitudes)
-#             thresholdDict[entry['stimChan']][entry['cuff']]['CV'].append(condVels)
-#
-#     return thresholdDict
 
 
 def flatten(l):
