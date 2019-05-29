@@ -4,7 +4,7 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 
-eType = 'epineural'
+eType = 'penetrating'
 
 collapseCuffs = True
 ignoreCuffs = ['BiFem']
@@ -125,7 +125,7 @@ for iDRG in hf.allDRG:
 
 
 
-# generate figures
+# generate normalized figures
 tmp3 = coactivationDF.loc[:, (coactivationDF != 0).any(axis=0)]
 tmp4 = tmp3.loc[(tmp3 != 0).any(axis=1), :]
 activeNerves = tmp4.columns
@@ -134,8 +134,8 @@ tmp4.columns = tmp4.index
 tmp4 = tmp4.div(tmp4.max(axis=1), axis=0)
 sns.heatmap(tmp4, annot=False, fmt=".1f",)
 plt.yticks(rotation=0)
-plt.savefig(eType + '/allDRG_coactivation.pdf')
-plt.savefig(eType + '/allDRG_coactivation.png')
+# plt.savefig(eType + '/allDRG_coactivation.pdf')
+# plt.savefig(eType + '/allDRG_coactivation.png')
 plt.close()
 
 for iDRG in hf.allDRG:
@@ -151,18 +151,52 @@ for iDRG in hf.allDRG:
     sns.heatmap(tmp2, annot=False, fmt=".1f", linewidths=.5)
     plt.pcolor(x, y, zm, hatch='//', alpha=0.)
     plt.yticks(rotation=0)
-    plt.savefig(eType + '/' + iDRG + '_coactivation.pdf')
-    plt.savefig(eType + '/' + iDRG + '_coactivation.png')
+    # plt.savefig(eType + '/' + iDRG + '_coactivation.pdf')
+    # plt.savefig(eType + '/' + iDRG + '_coactivation.png')
     plt.close()
 
-print numChan
-pd.DataFrame.from_dict(numChan).transpose().to_csv(eType + '/selective_counts.csv')
 
+
+# # generate non normalized figures
+# tmp3 = coactivationDF.loc[:, (coactivationDF != 0).any(axis=0)]
+# tmp4 = tmp3.loc[(tmp3 != 0).any(axis=1), :]
+# activeNerves = tmp4.columns
+# tmp4.index = [hf.allCuffs_mdf[i] for i in activeNerves]
+# tmp4.columns = tmp4.index
+# # tmp4 = tmp4.div(tmp4.max(axis=1), axis=0)
+# sns.heatmap(tmp4, annot=True, fmt="d",)
+# plt.yticks(rotation=0)
+# plt.savefig(eType + '/allDRG_coactivation_nonNorm.pdf')
+# plt.savefig(eType + '/allDRG_coactivation_nonNorm.png')
+# plt.close()
+#
+# for iDRG in hf.allDRG:
+#     coactivationDF_perDRG = coactivationDict_perDRG[iDRG][activeNerves]
+#     tmp2 = coactivationDict_perDRG[iDRG].loc[activeNerves, activeNerves]
+#     tmp2.index = [hf.allCuffs_mdf[i] for i in tmp2.columns]
+#     tmp2.columns = tmp2.index
+#     # tmp2 = tmp2.div(tmp2.max(axis=1), axis=0)
+#
+#     zm = np.ma.masked_less(tmp2.fillna(99).values,98)
+#     x = np.arange(len(tmp2.columns) + 1)
+#     y = np.arange(len(tmp2.index) + 1)
+#     sns.heatmap(tmp2, annot=True, fmt="d") # linewidths=.5
+#     plt.pcolor(x, y, zm, hatch='//', alpha=0.)
+#     plt.yticks(rotation=0)
+#     plt.savefig(eType + '/' + iDRG + '_coactivation_nonNorm.pdf')
+#     plt.savefig(eType + '/' + iDRG + '_coactivation_nonNorm.png')
+#     plt.close()
+
+
+# print numChan
+# pd.DataFrame.from_dict(numChan).transpose().to_csv(eType + '/selective_counts.csv')
+
+barOrder = [x for x in tmp4.index if x !='Fem' and x!= 'Sci']
 tmp5 = selectiveDF.append(agonistDF).append(nonSelectiveDF, ignore_index=True)
-f,ax3 = plt.subplots(2, 1, figsize=(6, 12))
-sns.countplot(x='nerve',hue='DRG',order=tmp4.index,data=selectiveDF, ax=ax3[0])
+f,ax3 = plt.subplots(2, 1, figsize=(9, 12))
+sns.countplot(x='nerve',hue='DRG',order=barOrder,data=selectiveDF, ax=ax3[0])
 # sns.countplot(x='nerve',order=tmp4.index,data=selectiveDF, ax=ax3[1])
-sns.countplot(x='nerve',hue='type',hue_order=['selective','non-selective','agonist'], order=tmp4.index,data=tmp5,ax=ax3[1])
+sns.countplot(x='nerve',hue='type',hue_order=['selective','non-selective','agonist'], order=barOrder,data=tmp5,ax=ax3[1])
 # sns.countplot(x='DRG',hue='subject',order=hf.allDRG,data=selectiveDF, ax=ax3[2])
 plt.savefig(eType + '/selectiveCounts.pdf')
 plt.savefig(eType + '/selectiveCounts.png')
