@@ -440,14 +440,14 @@ def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, stimUnits='ampl
 
     if stimUnits == 'charge':
         if eType == 'epineural':
-            colorMap_max = 35
+            colorMap = [9,26]
         else:
-            colorMap_max = 10
+            colorMap = [1,6] #[6, 1]
     else:                               # current
         if eType == 'epineural':
-            colorMap_max = 300
+            colorMap = [300, 0]
         else:
-            colorMap_max = 40
+            colorMap = [40, 0]
 
     lines = go.Scatter(x=Xe,
                        y=Ye,
@@ -460,9 +460,17 @@ def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, stimUnits='ampl
                       mode='markers',
                       marker=dict(size=nodeSize,
                                   color=nodeColor,  # '#DB4551',
-                                  cmax=colorMap_max,cmin =0,
+                                  cmin=colorMap[0], cmax=colorMap[1],
                                   line=dict(color='rgb(50,50,50)', width=1),
                                   colorscale='RdBu',
+                                  # colorscale=[[0, 'rgb(49,54,149)'],  # 0
+                                  #               [0.0005, 'rgb(69,117,180)'],  # 10
+                                  #               [0.005, 'rgb(116,173,209)'],  # 100
+                                  #               [0.05, 'rgb(171,217,233)'],  # 1000
+                                  #               [0.5, 'rgb(224,243,248)'],
+                                  #               [0.75, 'rgb(215,48,39)'],# 10000
+                                  #               [1.0, 'rgb(165,0,38)'],  # 100000
+                                  #               ],
                                   colorbar=dict(thickness=20)
                                   ),
                       text=hoverText,
@@ -474,7 +482,7 @@ def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, stimUnits='ampl
                   font=dict(size=12),
                   showlegend=False,
                   xaxis=dict(range=[-5, 10], showline=False, zeroline=True, showgrid=False, showticklabels=False, ),
-                  yaxis=dict(range=[0.5, 5], showline=False, zeroline=True, showgrid=True, showticklabels=False, ),
+                  yaxis=dict(range=[1.5, 4.5], showline=False, zeroline=True, showgrid=True, showticklabels=False, ),
                   margin=dict(l=40, r=40, b=85, t=100),
                   hovermode='closest',
                   plot_bgcolor='rgb(248,248,248)'
