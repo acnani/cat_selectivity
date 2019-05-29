@@ -36,6 +36,80 @@ for nerve in ['Femoral', 'Sciatic']:
     tmpAllCV_DF = tmpAllCV_DF.append(tmpAllDRG_DF, ignore_index=True)
     tmpAllCV_Thresh = tmpAllCV_Thresh.append(tmpThresh_DF, ignore_index=True)
 
+
+
+
+# violin plots for selectivity only
+collapseCuffs = True
+ignoreCuffs = ['BiFem']
+
+cuffParentsDict = hf.getInnervationParents()
+colorList = hf.colorOrder
+
+subjectList = hf.getSubjects(eType)
+targetNerveLabels = hf.allCuffs_mdf.keys()
+coactivationDF = pd.DataFrame(0,columns=targetNerveLabels, index=targetNerveLabels)
+
+# selectiveDF = pd.DataFrame(columns=['DRG', 'nerve', 'subject','Threshold','Dynamic Range','Threshold (nC)','Dynamic Range (nC)','type'])
+
+coactivationDict_perDRG = {}
+for iDRG in hf.allDRG:
+    coactivationDF_perDRG = pd.DataFrame(0,columns=targetNerveLabels, index=targetNerveLabels)
+
+    for subject in subjectList:
+        # numChan.setdefault(subject,{'selectiveElec':0, 'activeElec':0, })
+        seshPerDRG = hf.sessionPerDRG(subject, eType)  # add argument for penetrating vs epineural
+
+        if iDRG in seshPerDRG.keys():
+
+            # iterate over each session
+            for iSesh in seshPerDRG[iDRG]:
+                threshDict = hf.thresholdPerCuff(subject, iSesh, ignoreCuffs, collapseCuffs)
+                threshChans = sorted(threshDict.keys())
+                discardChans = hf.getSingleAmplitudeChannels(subject, iSesh)
+                allStimChans = [chans for chans in threshChans if chans not in discardChans]
+
+                for iStimChan in allStimChans:
+                    cuffThresholds = threshDict[iStimChan]
+
+                    # print cuffThresholds
+                    allRecruitedCuffs = cuffThresholds.keys()
+
+                    if cuffThresholds:
+                        # coactivation matrix
+                        threshAmp = min(cuffThresholds.values())
+                        coactivatedCuffs = [x for x in cuffThresholds.keys() if cuffThresholds[x] <= threshAmp]
+
+                        # selectivity counts
+                        cuffThresholds.pop("Sciatic_Proximal", None)
+                        cuffThresholds.pop("Femoral_Proximal", None)
+                        threshAmp = min(cuffThresholds.values())
+                        coactivatedCuffs = [x for x in cuffThresholds.keys() if cuffThresholds[x] <= threshAmp]
+                        # remove all ancestors of the recruited nerves
+                        for iCuff in coactivatedCuffs:
+                            res = cuffParentsDict[iCuff]
+                            while res != '':
+                                if res in coactivatedCuffs: coactivatedCuffs.remove(res)
+                                res = cuffParentsDict[res]
+
+                        # selective recruitment find CV
+                        if len(coactivatedCuffs) == 1:
+                            selectiveCuffLabel = coactivatedCuffs[0]
+                            print subject + ' ' + str(iSesh) + ' ' + str(iStimChan) + ' selective for ' + hf.allCuffs_mdf[selectiveCuffLabel]
+
+                            if hf.allCuffs_mdf[selectiveCuffLabel] in ['VL', 'VM', 'Sph', 'Srt']:
+                                tmpObj = hf.db[hf.collection].find(
+                                    {'mdf_def.mdf_type': 'CV', 'mdf_metadata.session': iSesh,
+                                     'mdf_metadata.stimChan': iStimChan, 'mdf_metadata.location': 'Femoral'}).distinct('mdf_metadata.cv')
+
+                            else:
+                                tmpObj = hf.db[hf.collection].find(
+                                    {'mdf_def.mdf_type': 'CV', 'mdf_metadata.session': iSesh,
+                                     'mdf_metadata.stimChan': iStimChan, 'mdf_metadata.location': 'Sciatic'}).distinct('mdf_metadata.cv')
+
+
+
+
 tmp = tmpAllCV_DF.append(tmpAllCV_Thresh, ignore_index=True)
 sns.violinplot(x="Stimulation Amplitude", y="Conduction Velocity", orient='h', hue="Threshold", data=tmp,
                palette="muted", order=[120, 80, 60, 48, 40, 34], split=True, ax=violinAx[2])
