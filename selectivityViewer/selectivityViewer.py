@@ -11,6 +11,8 @@ sys.path.append('..')
 import helperFcns as hf
 import h5py
 import base64
+import pandas as pd
+import urllib
 
 if 'win' in sys.platform:
     rootPath = 'R:\\DB\MDF\\cat\\acuteSelectivity'
@@ -22,6 +24,8 @@ app = dash.Dash(__name__)
 app.config['suppress_callback_exceptions']=True
 app.title = 'Lumbar Selectivity Viewer'
 server = app.server
+
+dataDF = pd.DataFrame()
 
 app.layout = html.Div(children=[
     # .container class is fixed, .container.scalable is scalable
@@ -95,6 +99,13 @@ app.layout = html.Div(children=[
                             clearable=False,
                             searchable=False,
                         ),
+
+                        # html.A("Download CSV",
+                        #        id='download_link',
+                        #        download="rawdata.csv",
+                        #        href="",
+                        #        target="_blank"
+                        #        ),
                     ]),
 
                 ]
@@ -107,7 +118,6 @@ app.layout = html.Div(children=[
                     id='div-graphs',
                     children=dcc.Graph(
                         id='STA_ENG',
-                        style={"height": "90%", "width": "98%"},
                     )
                 ),
             ]),
@@ -117,7 +127,7 @@ app.layout = html.Div(children=[
                     id='div-graphs2',
                     children=dcc.Graph(
                         id='innervationTree',
-                        style={"height": "50%", "width": "98%"},
+                        style={"height": "33vh"},
                     )
                 ),
             ]),
@@ -211,15 +221,14 @@ def getSTAENGsnips(amp, stimChan, sesh, subj, eTypeVal):
                                                  'mdf_metadata.stimChan': stimChan}))
 
         figData = []
+        global dataDF
+        dataDF = pd.DataFrame()
         for iObj in engObj:
             dataFile = os.path.join(rootPath,*iObj['mdf_def']['mdf_files']['mdf_data'].split('\\')[1:])
             tmp = h5py.File(dataFile)
-
             yENG = [x.tolist()[0] for x in tmp['avg_wf']]
-
             numSamples = len(yENG)
             xtime = list(np.linspace(0, float(numSamples) / 30, numSamples))
-
             figData.append(go.Scatter(
                 x=xtime,
                 y=yENG,
@@ -228,6 +237,9 @@ def getSTAENGsnips(amp, stimChan, sesh, subj, eTypeVal):
                 hoverinfo = 'none'
             ))
 
+            dataDF[iObj['mdf_metadata']['location']] = yENG
+
+        dataDF['time (ms)'] = xtime
         layout = dict(margin=dict(l=60, r=10, t=0, b=70),  legend=dict(yanchor="bottom",y=0),
                       xaxis=dict(title='Time (ms)'),
                       yaxis=dict(fixedrange=True, title='amp (uV)'))
@@ -250,12 +262,35 @@ def createInnervationTreeDiagram(chan, session, subject, eTypeVal):
             allAmps = [threshDict[cuffName] for cuffName in resultCuffs]
             tmp = hf.generateInnervationTree(resultCuffs, allAmps, 25)
             tmp['layout']['title'] = tmp['layout']['title'] + ' (hover for activation threshold) '
+            tmp['layout']['margin'] = dict(t=30, b=20)
             return tmp
         else:
             return dict(data=[], layout=[])
     else:
         return dict(data=[], layout=[])
 
+
+# @app.callback (Output('download_link', "download"),
+#                [Input('dropdown-select-stimAmp', "value"),
+#                 Input('dropdown-select-stimChan', "value"),
+#                 Input('dropdown-select-session', "value"),
+#                Input('dropdown-select-subject', 'value'),
+#                 Input('dropdown-select-eType', 'value')],)
+# def setFileName(amp, stimChan, sesh, subj, eTypeVal):
+#     if amp:
+#         return '%s_ssn%03d_chan%02d_amp%0.2f_%s.csv' %(subj, sesh, stimChan, amp,eTypeVal)
+#
+#
+# @app.callback (Output('download_link', 'href'),
+#                [Input('download_link', "n_clicks"),
+#                 Input('STA_ENG', "figure"),
+#                 Input('dropdown-select-stimAmp', "value")],)
+# def downloadDF(n, fig, amp):
+#     if amp:
+#         global dataDF
+#         csv_string = dataDF.to_csv(index=False, encoding='utf-8')
+#         csv_string = "data:text/csv;charset=utf-8," + urllib.quote(csv_string)
+#         return csv_string
 
 # Running the server
 if __name__ == '__main__':
