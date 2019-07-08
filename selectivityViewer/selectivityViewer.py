@@ -100,12 +100,12 @@ app.layout = html.Div(children=[
                             searchable=False,
                         ),
 
-                        # html.A("Download CSV",
-                        #        id='download_link',
-                        #        download="rawdata.csv",
-                        #        href="",
-                        #        target="_blank"
-                        #        ),
+                        html.A("Download CSV",
+                               id='download_link',
+                               download="rawdata.csv",
+                               href="",
+                               target="_blank"
+                               ),
                     ]),
 
                 ]
@@ -233,6 +233,7 @@ def getSTAENGsnips(amp, stimChan, sesh, subj, eTypeVal):
                 x=xtime,
                 y=yENG,
                 mode='lines',
+                line=dict(shape='spline'),
                 name = iObj['mdf_metadata']['location'],
                 hoverinfo = 'none'
             ))
@@ -270,27 +271,27 @@ def createInnervationTreeDiagram(chan, session, subject, eTypeVal):
         return dict(data=[], layout=[])
 
 
-# @app.callback (Output('download_link', "download"),
-#                [Input('dropdown-select-stimAmp', "value"),
-#                 Input('dropdown-select-stimChan', "value"),
-#                 Input('dropdown-select-session', "value"),
-#                Input('dropdown-select-subject', 'value'),
-#                 Input('dropdown-select-eType', 'value')],)
-# def setFileName(amp, stimChan, sesh, subj, eTypeVal):
-#     if amp:
-#         return '%s_ssn%03d_chan%02d_amp%0.2f_%s.csv' %(subj, sesh, stimChan, amp,eTypeVal)
-#
-#
-# @app.callback (Output('download_link', 'href'),
-#                [Input('download_link', "n_clicks"),
-#                 Input('STA_ENG', "figure"),
-#                 Input('dropdown-select-stimAmp', "value")],)
-# def downloadDF(n, fig, amp):
-#     if amp:
-#         global dataDF
-#         csv_string = dataDF.to_csv(index=False, encoding='utf-8')
-#         csv_string = "data:text/csv;charset=utf-8," + urllib.quote(csv_string)
-#         return csv_string
+@app.callback (Output('download_link', "download"),
+               [Input('dropdown-select-stimAmp', "value"),
+                Input('dropdown-select-stimChan', "value"),
+                Input('dropdown-select-session', "value"),
+               Input('dropdown-select-subject', 'value'),
+                Input('dropdown-select-eType', 'value')],)
+def setFileName(amp, stimChan, sesh, subj, eTypeVal):
+    if amp:
+        return '%s_ssn%03d_chan%02d_amp%0.2f_%s.csv' %(subj, sesh, stimChan, amp,eTypeVal)
+
+
+@app.callback (Output('download_link', 'href'),
+               [Input('download_link', "n_clicks"),
+                Input('STA_ENG', "figure"),
+                Input('dropdown-select-stimAmp', "value")],)
+def downloadDF(n, fig, amp):
+    if amp:
+        global dataDF
+        csv_string = dataDF.to_csv(index=False, encoding='utf-8')
+        csv_string = "data:text/csv;charset=utf-8," + urllib.quote(csv_string)
+        return csv_string
 
 # Running the server
 if __name__ == '__main__':
