@@ -1,5 +1,6 @@
 import pymongo
 import matplotlib
+from matplotlib import cm
 from matplotlib.colors import LinearSegmentedColormap
 import numpy as np
 import collections
@@ -565,6 +566,25 @@ def createParulaCMAP():
     return pl_colorscale
 parula = createParulaCMAP()
 colorOrder = ['rgba(31,119,180,1)', 'rgba(255,127,14,1)', 'rgba(44,160,44,1)', 'rgba(214,30,30,1)']
+
+def createMagmaCMAP():
+    magma_cmap = matplotlib.cm.get_cmap('magma')
+    magma_rgb = []
+    norm = matplotlib.colors.Normalize(vmin=0, vmax=255)
+
+    for i in range(0, 255):
+        k = matplotlib.colors.colorConverter.to_rgb(magma_cmap(norm(i)))
+        magma_rgb.append(k)
+
+    h = 1.0 / (255 - 1)
+    pl_colorscale = []
+
+    for k in range(255):
+        C = map(np.uint8, np.array(magma_cmap(k * h)[:3]) * 255)
+        pl_colorscale.append([k * h, 'rgb' + str((C[0], C[1], C[2]))])
+
+    return pl_colorscale
+magma = createMagmaCMAP()
 
 
 ## needed to get sessions and uuid per subject per eType for validation
