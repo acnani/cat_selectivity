@@ -88,6 +88,8 @@ for iDRG in hf.allDRG:
 
 # # generate normalized figures
 tmp4 = tmp4.div(tmp4.max(axis=1), axis=0)
+tmp4.to_csv(eType+'/coactivation_norm.csv')
+
 sns.heatmap(tmp4)
 plt.yticks(rotation=0)
 plt.savefig(eType + '/allDRG_coactivation.pdf')
