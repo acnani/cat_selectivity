@@ -10,7 +10,7 @@ function [] = plotCVanalysis(analObj)
     
     parent = subplot(3,1,2);
     hold all
-    plot(analObj.d.lcc_time,analObj.d.lcc,'-o');
+    plot(analObj.d.lcc_time,analObj.d.lcc,'.','MarkerSize',3);
     plot(xlim(parent),analObj.d.lcc_threshold*[1 1],'--',...
         'Color',[1 0 0],...
         'parent',parent);
@@ -20,10 +20,12 @@ function [] = plotCVanalysis(analObj)
     hold all
     plot(analObj.d.wf_time,analObj.d.proximal_wf,'-','color',[.8 .8 .8],'Linewidth',3);
     plot(analObj.d.wf_time,analObj.d.distal_wf,'-','color',[0 0 1]);
+    legendStr = {'proximal','distal'};
     for iWin  = 1:numWins
-        plot(analObj.d.wf_time(analObj.d.window_mask{iWin})+analObj.d.best_shift(iWin),analObj.d.proximal_wf(analObj.d.window_mask{iWin}),'-','color',[1 0 0]);
+        plot(analObj.d.wf_time(analObj.d.window_mask{iWin})+analObj.d.best_shift(iWin),analObj.d.proximal_wf(analObj.d.window_mask{iWin}),'-');
+        legendStr{end+1} = num2str(analObj.md.cv(iWin));
     end
-    legend('proximal','distal','shifted proximal')
+    legend(legendStr)
 %     patch(time_window([1 2 2 1]),ylimits([1 1 2 2]),[.4 .4 .4],'FaceAlpha',.5)
     set(findobj(gcf,'type','patch'),'hittest','off')
     linkFigureAxes(gcf,'x')
