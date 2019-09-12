@@ -88,7 +88,7 @@ for iDRG in hf.allDRG:
                                                 {'DRG': iDRG, 'nerve': hf.allCuffs_mdf[selectiveCuffLabel], 'subject': subject,
                                                  'Threshold': threshAmp, 'Dynamic Range': dynamicRange,
                                                  'Threshold (nC)': thresh_nC, 'Dynamic Range (nC)': dynamicRange_nC, 'binarySearchRes':binaryRes,
-                                                 'type': 'selective'
+                                                 'type': 'selective', 'stimChan':iStimChan,
                                                  }, ignore_index=True)
 
                         # children, siblings or unrelated coactivated cuffs left
@@ -120,7 +120,7 @@ selectiveDF.to_csv(eType + '/selectiveDF.csv', index=False)
 
 # # selective, non selective and agonist counts
 concatData = selectiveDF.append(agonistDF).append(nonSelectiveDF, ignore_index=True)
-barOrder = [x for x in hf.allCuffs_mdf.values() if x in concatData['nerve'].unique()]
+barOrder = ['Tib','dTib','MG','LG','CP','dCP','Sensory','Sph','VL','VM','Srt'] #[x for x in hf.allCuffs_mdf.values() if x in concatData['nerve'].unique()]
 
 f,ax3 = plt.subplots(figsize=(9, 6))
 sns.countplot(x='nerve',hue='type',hue_order=['selective','non-selective','agonist'], order=barOrder,data=concatData)
@@ -186,6 +186,7 @@ ax4[0].text(0, 0, np.median(TH))
 sns.distplot(DR, bins=np.arange(0,maxVal_DR,binSize_DR), kde=False,ax=ax4[1])
 ax4[1].plot([np.median(DR), np.median(DR)], [0, 2], linewidth=2)
 ax4[1].text(0, 0, np.median(DR))
+ax4[1].set(xlim=(None,6.2))
 
 TH.to_csv(eType + '/thresholds.csv',header=['vals'])
 DR.to_csv(eType + '/dynamicRanges.csv',header=['vals'])
