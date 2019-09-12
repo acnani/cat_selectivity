@@ -43,10 +43,10 @@ function [] = plotRMSanalysis(analObj)
 
     subplot(3,1,3)
     hold on
-    plot(analObj.d.rms_time,analObj.d.mean_full_rms)
+    plot(analObj.d.rms_time,analObj.d.mean_full_rms,'.','MarkerSize',10)
     plot(analObj.d.xlims,analObj.d.rms_threshold*[1 1],'--r')
 %     xlim(analObj.d.xlims)
-    xlim([0.0005, analObj.d.xlims(2)])
+%     xlim([0.0005, analObj.d.xlims(2)])
     xlabel('Time (ms)')
     title('Mean Bootstrap RMS')                
     
