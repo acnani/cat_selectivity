@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 import dash
 import dash_core_components as dcc
 import dash_html_components as html
@@ -13,6 +16,9 @@ import h5py
 import base64
 import pandas as pd
 import urllib
+import seaborn as sns
+import StringIO
+from scipy.interpolate import interp1d
 
 if 'win' in sys.platform:
     rootPath = 'R:\\DB\MDF\\cat\\acuteSelectivity'
@@ -25,7 +31,9 @@ app.config['suppress_callback_exceptions']=True
 app.title = 'Lumbar Selectivity Viewer'
 server = app.server
 
-dataDF = pd.DataFrame()
+fig,ax = plt.subplots(figsize=(10, 5))
+dataDF_csv = pd.DataFrame()
+# dataDF_svg = pd.DataFrame()
 
 app.layout = html.Div(children=[
     # .container class is fixed, .container.scalable is scalable
@@ -52,7 +60,6 @@ app.layout = html.Div(children=[
                 className='three columns',
                 children=[
                     drc.Card([
-
                         drc.NamedDropdown(
                             name='Select Electrode: ',
                             id='dropdown-select-eType',
@@ -100,14 +107,20 @@ app.layout = html.Div(children=[
                             searchable=False,
                         ),
 
-                        html.A("Download CSV",
-                               id='download_link',
+                        html.Div(html.A("Download CSV",
+                               id='download_data',
                                download="rawdata.csv",
                                href="",
                                target="_blank"
-                               ),
-                    ]),
+                               )),
 
+                        html.Div(html.A("Download SVG",
+                               id='download_fig',
+                               download="rawdata.svg",
+                               href="",
+                               target="_blank"
+                               )),
+                    ]),
                 ]
             ),
     html.Div(
@@ -219,11 +232,13 @@ def getSTAENGsnips(amp, stimChan, sesh, subj, eTypeVal):
                                                  'mdf_metadata.session': sesh,
                                                  'mdf_metadata.amplitude': {"$lte": amp + 0.1, "$gte": amp - 0.1},
                                                  'mdf_metadata.stimChan': stimChan}))
+        engObj_sorted = [loc for x in hf.ENG_graphOrder for loc in engObj if loc['mdf_metadata']['location'] == x]
 
         figData = []
-        global dataDF
-        dataDF = pd.DataFrame()
-        for iObj in engObj:
+        global dataDF_csv
+        dataDF_csv = pd.DataFrame()
+
+        for iObj in engObj_sorted:
             dataFile = os.path.join(rootPath,*iObj['mdf_def']['mdf_files']['mdf_data'].split('\\')[1:])
             tmp = h5py.File(dataFile)
             yENG = [x.tolist()[0] for x in tmp['avg_wf']]
@@ -238,9 +253,9 @@ def getSTAENGsnips(amp, stimChan, sesh, subj, eTypeVal):
                 hoverinfo = 'none'
             ))
 
-            dataDF[iObj['mdf_metadata']['location']] = yENG
+            dataDF_csv[iObj['mdf_metadata']['location']] = yENG
 
-        dataDF['time (ms)'] = xtime
+        dataDF_csv['time (ms)'] = xtime
         layout = dict(margin=dict(l=60, r=10, t=0, b=70),  legend=dict(yanchor="bottom",y=0),
                       xaxis=dict(title='Time (ms)'),
                       yaxis=dict(fixedrange=True, title='amp (uV)'))
@@ -271,7 +286,7 @@ def createInnervationTreeDiagram(chan, session, subject, eTypeVal):
         return dict(data=[], layout=[])
 
 
-@app.callback (Output('download_link', "download"),
+@app.callback (Output('download_data', "download"),
                [Input('dropdown-select-stimAmp', "value"),
                 Input('dropdown-select-stimChan', "value"),
                 Input('dropdown-select-session', "value"),
@@ -282,15 +297,50 @@ def setFileName(amp, stimChan, sesh, subj, eTypeVal):
         return '%s_ssn%03d_chan%02d_amp%0.2f_%s.csv' %(subj, sesh, stimChan, amp,eTypeVal)
 
 
-@app.callback (Output('download_link', 'href'),
-               [Input('download_link', "n_clicks"),
+@app.callback (Output('download_data', 'href'),
+               [Input('download_data', "n_clicks"),
                 Input('STA_ENG', "figure"),
                 Input('dropdown-select-stimAmp', "value")],)
 def downloadDF(n, fig, amp):
     if amp:
-        global dataDF
-        csv_string = dataDF.to_csv(index=False, encoding='utf-8')
+        global dataDF_csv
+        csv_string = dataDF_csv.to_csv(index=False, encoding='utf-8')
         csv_string = "data:text/csv;charset=utf-8," + urllib.quote(csv_string)
+        return csv_string
+
+
+@app.callback (Output('download_fig', "download"),
+               [Input('dropdown-select-stimAmp', "value"),
+                Input('dropdown-select-stimChan', "value"),
+                Input('dropdown-select-session', "value"),
+               Input('dropdown-select-subject', 'value'),
+                Input('dropdown-select-eType', 'value')],)
+def setFileName(amp, stimChan, sesh, subj, eTypeVal):
+    if amp:
+        return '%s_ssn%03d_chan%02d_amp%0.2f_%s.svg' %(subj, sesh, stimChan, amp,eTypeVal)
+
+@app.callback(Output('download_fig', 'href'),
+              [Input('download_fig', "n_clicks"),
+               Input('STA_ENG', "figure"),
+               Input('dropdown-select-stimAmp', "value")], )
+def downloadFig(n, figObj, amp):
+    if amp:
+        global dataDF_csv
+        origT = dataDF_csv['time (ms)']
+        tmpDF = dataDF_csv.drop('time (ms)', axis=1)
+        newT = np.linspace(0, max(origT), num=len(origT) * 4, endpoint=True)
+        for x in tmpDF:
+            f = interp1d(origT, tmpDF[x], kind='cubic')
+            sns.lineplot(x=newT, y=f(newT), label=x)
+
+        plt.xlim((0, max(origT)))
+        ax.autoscale(enable=True, axis='x', tight=True)
+        imgdata = StringIO.StringIO()
+        fig.savefig(imgdata, format='svg')
+        imgdata.seek(0)
+        svg_dta = imgdata.buf
+        csv_string = "data:image/svg+xml;charset=utf-8," + urllib.quote(svg_dta)
+        fig.clear()
         return csv_string
 
 # Running the server
