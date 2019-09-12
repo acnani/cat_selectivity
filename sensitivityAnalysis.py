@@ -26,7 +26,9 @@ for iSub in subjectList:
 sensitivity = (TP)/(TP + FN)*100  # FPR
 specificity = (TN)/(TN + FP)*100  # TNR
 accuracy = (TP + TN)/(TP + TN + FP + FN)*100  # precision
-accuracy.to_csv('R:\\users\\amn69\\Projects\\cat\\selectivity\\surface paper\\drafts\\accuracy.csv')
+# accuracy.to_csv('R:\\users\\amn69\\Projects\\cat\\selectivity\\surface paper\\drafts\\accuracy.csv')
+
+FP_rate = FP/(FP+TN)
 
 # net
 sensitivity_net = float(TP.values.sum())/(TP.values.sum() + FN.values.sum())*100  # FPR
