@@ -1,119 +1,140 @@
 import helperFcns as hf
-import seaborn as sns; sns.set(style="white", color_codes=True)
+import seaborn as sns
+import numpy as np
 import pandas as pd
 from helperFcns import plt
+sns.set(style="white", color_codes=True)
+from itertools import chain
+import scipy
 
-eType = 'epineural'
-stimUnits = 'amplitude'
-subjectList = hf.getSubjects(eType)
-f2, violinAx = plt.subplots(1, 2, figsize=(14, 5))
+eType = 'penetrating'
+stimUnits = 'charge'
 
+# f, violinAx = plt.subplots(1, 2, figsize=(14, 5))
+cvList = []
+i=0
+for eType in ['penetrating','epineural']:
+    subjectList = hf.getSubjects(eType)
+    for nerve in ['Femoral', 'Sciatic']:
+        for iSub in subjectList:
+            seshPerDRG = hf.sessionPerDRG(iSub, eType)
+            allSessions = sum(seshPerDRG.values(),[])
 
-# all amplitudes
-tmpAllCV_DF = pd.DataFrame({'Stimulation Amplitude':[], 'Conduction Velocity':[],'Subject':[],'DRG':[],'Threshold':[]})
-tmpAllCV_Thresh = pd.DataFrame({'Stimulation Amplitude':[], 'Conduction Velocity':[],'Subject':[],'DRG':[],'Threshold':[]})
-i = 0
-f, violinAx = plt.subplots(1, 3, figsize=(21, 5))
+            for iSesh in allSessions:
+                res = hf.db.command({
+                    'aggregate': hf.collection,
+                    'pipeline': [
+                        {'$match': {
+                            "mdf_metadata.subject": iSub,
+                            "mdf_metadata.session": iSesh,
+                            "mdf_metadata.location": nerve,
+                            "mdf_def.mdf_type": 'CV',
+                            "mdf_metadata.is_sig_manual": {"$in": [1, None]},
+                        }},
+                        {"$group": {
+                            "_id": {"stimChan": "$mdf_metadata.stimChan"},
+                            "threshAmp": {"$min": "$mdf_metadata.amplitude"},
+                        }},
+                        {'$project':{
+                            '_id':0,
+                            'chan':'$_id.stimChan',
+                            'thresh':'$threshAmp'
+                        }}
+                    ]})
 
-for nerve in ['Femoral', 'Sciatic']:
-    tmpAllDRG_DF = pd.DataFrame({'Stimulation Amplitude':[], 'Conduction Velocity':[],'Subject':[],'DRG':[],'Threshold':[]})
-    tmpThresh_DF = pd.DataFrame({'Stimulation Amplitude':[], 'Conduction Velocity':[],'Subject':[],'DRG':[],'Threshold':[]})
-    for iSub in subjectList:
-        seshPerDRG = hf.sessionPerDRG(iSub, eType)
-        for drg in seshPerDRG.keys():
-            tmpAllDRG_DF = tmpAllDRG_DF.append(hf.getCVperAmp(iSub, seshPerDRG[drg], nerve, stimUnits),ignore_index=True)
-            threshDF = hf.getCVatThresh(iSub, seshPerDRG[drg], nerve, stimUnits)
-            if not threshDF.empty:
-                tmpThresh_DF = tmpThresh_DF.append(threshDF, ignore_index=True)
-
-    # hf.generateCVPlots(tmpAllDRG_DF,nerve, stimUnits, rootFolder)
-    tmp2 = tmpAllDRG_DF.append(tmpThresh_DF, ignore_index=True)
-    sns.violinplot(x="Stimulation Amplitude", y="Conduction Velocity", orient='h', hue="Threshold", data=tmp2,
-                   palette="muted", order=[120, 80, 60, 48, 40, 34], split=True, ax=violinAx[i])
-    violinAx[i].set_title(nerve)
-    i += 1
-
-    tmpAllCV_DF = tmpAllCV_DF.append(tmpAllDRG_DF, ignore_index=True)
-    tmpAllCV_Thresh = tmpAllCV_Thresh.append(tmpThresh_DF, ignore_index=True)
-
-
-
-
-# violin plots for selectivity only
-collapseCuffs = True
-ignoreCuffs = ['BiFem']
-
-cuffParentsDict = hf.getInnervationParents()
-colorList = hf.colorOrder
-
-subjectList = hf.getSubjects(eType)
-targetNerveLabels = hf.allCuffs_mdf.keys()
-coactivationDF = pd.DataFrame(0,columns=targetNerveLabels, index=targetNerveLabels)
-
-# selectiveDF = pd.DataFrame(columns=['DRG', 'nerve', 'subject','Threshold','Dynamic Range','Threshold (nC)','Dynamic Range (nC)','type'])
-
-coactivationDict_perDRG = {}
-for iDRG in hf.allDRG:
-    coactivationDF_perDRG = pd.DataFrame(0,columns=targetNerveLabels, index=targetNerveLabels)
-
-    for subject in subjectList:
-        # numChan.setdefault(subject,{'selectiveElec':0, 'activeElec':0, })
-        seshPerDRG = hf.sessionPerDRG(subject, eType)  # add argument for penetrating vs epineural
-
-        if iDRG in seshPerDRG.keys():
-
-            # iterate over each session
-            for iSesh in seshPerDRG[iDRG]:
-                threshDict = hf.thresholdPerCuff(subject, iSesh, ignoreCuffs, collapseCuffs)
-                threshChans = sorted(threshDict.keys())
-                discardChans = hf.getSingleAmplitudeChannels(subject, iSesh)
-                allStimChans = [chans for chans in threshChans if chans not in discardChans]
-
-                for iStimChan in allStimChans:
-                    cuffThresholds = threshDict[iStimChan]
-
-                    # print cuffThresholds
-                    allRecruitedCuffs = cuffThresholds.keys()
-
-                    if cuffThresholds:
-                        # coactivation matrix
-                        threshAmp = min(cuffThresholds.values())
-                        coactivatedCuffs = [x for x in cuffThresholds.keys() if cuffThresholds[x] <= threshAmp]
-
-                        # selectivity counts
-                        cuffThresholds.pop("Sciatic_Proximal", None)
-                        cuffThresholds.pop("Femoral_Proximal", None)
-                        threshAmp = min(cuffThresholds.values())
-                        coactivatedCuffs = [x for x in cuffThresholds.keys() if cuffThresholds[x] <= threshAmp]
-                        # remove all ancestors of the recruited nerves
-                        for iCuff in coactivatedCuffs:
-                            res = cuffParentsDict[iCuff]
-                            while res != '':
-                                if res in coactivatedCuffs: coactivatedCuffs.remove(res)
-                                res = cuffParentsDict[res]
-
-                        # selective recruitment find CV
-                        if len(coactivatedCuffs) == 1:
-                            selectiveCuffLabel = coactivatedCuffs[0]
-                            print subject + ' ' + str(iSesh) + ' ' + str(iStimChan) + ' selective for ' + hf.allCuffs_mdf[selectiveCuffLabel]
-
-                            if hf.allCuffs_mdf[selectiveCuffLabel] in ['VL', 'VM', 'Sph', 'Srt']:
-                                tmpObj = hf.db[hf.collection].find(
-                                    {'mdf_def.mdf_type': 'CV', 'mdf_metadata.session': iSesh,
-                                     'mdf_metadata.stimChan': iStimChan, 'mdf_metadata.location': 'Femoral'}).distinct('mdf_metadata.cv')
-
-                            else:
-                                tmpObj = hf.db[hf.collection].find(
-                                    {'mdf_def.mdf_type': 'CV', 'mdf_metadata.session': iSesh,
-                                     'mdf_metadata.stimChan': iStimChan, 'mdf_metadata.location': 'Sciatic'}).distinct('mdf_metadata.cv')
+                for iChan in res['result']:
+                    res2 = hf.db.command({
+                        'aggregate': hf.collection,
+                        'pipeline': [
+                            {'$match': {
+                                "mdf_metadata.subject": iSub,
+                                "mdf_metadata.session": iSesh,
+                                "mdf_metadata.location": nerve,
+                                'mdf_metadata.stimChan':iChan['chan'],
+                                "mdf_def.mdf_type": 'CV',
+                                "mdf_metadata.cv":{'$ne':'999'},
+                                "mdf_metadata.is_sig_manual": {"$in": [1, None]},
+                            }},
+                            {"$group": {
+                                "_id": {"amp": "$mdf_metadata.amplitude"},
+                                "CV": {"$push": "$mdf_metadata.cv"},
+                                "thresh":{'$addToSet':iChan['thresh']}
+                            }},
+                            {'$project': {
+                                '_id': 0,
+                                'amp': '$_id.amp',
+                                'thresh':'$thresh',
+                                'CV': '$CV'
+                            }}
+                        ]})
 
 
+                    for iRes in res2['result']:
+                        tmp = {}
+                        # l = [0, 2, (1, 2), 5, 2, (3, 5)]
+                        # list(chain(*(i if isinstance(i, list) else (i,) for i in l)))
+                        if isinstance(iRes['CV'][-1], list):
+                            allCV = list(chain(*(i if isinstance(i, list) else (i,) for i in iRes['CV']))) #sum(iRes['CV'],[])
+                            numCV = len(allCV) #len(sum(iRes['CV'],[]))
+                        else:
+                            allCV = iRes['CV']
+                            numCV = len(iRes['CV'])
+                        for iCV in allCV:
+                            if iCV != 0:
+                                tmp = {}
+                                tmp['CV'] = np.ceil(iCV)
+                                tmp['CVidx'] = [120, 80, 60, 48, 40, 35, 30].index(np.ceil(iCV))
+                                tmp['threshX'] = iRes['amp']/float(iRes['thresh'][0])
+                                tmp['stimAmp'] = iRes['amp']
+                                tmp['stimCharge'] = hf.convertCurrentToCharge(iRes['amp'],iSub, iSesh)
+                                tmp['eType'] = eType
+                                tmp['nerve'] = nerve
+                                tmp['subject'] = iSub
+                                tmp['session'] = iSesh
+                                if tmp['threshX'] == 1:
+                                    tmp['type'] = 'thresh'
+                                else:
+                                    tmp['type'] = 'supra'
+
+                                cvList.append(tmp)
+
+CVdf = pd.DataFrame(list(reversed(cvList)))
 
 
-tmp = tmpAllCV_DF.append(tmpAllCV_Thresh, ignore_index=True)
-sns.violinplot(x="Stimulation Amplitude", y="Conduction Velocity", orient='h', hue="Threshold", data=tmp,
-               palette="muted", order=[120, 80, 60, 48, 40, 34], split=True, ax=violinAx[2])
-violinAx[2].set_title('all trunks')
-f.savefig(eType+"_"+stimUnits+"_CV_violinPlot.png")
-f.savefig(eType+"_"+stimUnits+"_CV_violinPlot.pdf")
-print 'done'
+f, violinAx = plt.subplots(2,2,figsize=(14, 10))
+sns.boxplot(data=CVdf[(CVdf['eType']=='epineural') & (CVdf['nerve']=='Femoral')], x='stimCharge', y='CV',orient='h',hue='type',order=[120, 80, 60, 48, 40, 35, 30],linewidth=1,ax=violinAx[0][0])
+sns.boxplot(data=CVdf[(CVdf['eType']=='epineural') & (CVdf['nerve']=='Sciatic')], x='stimCharge', y='CV',orient='h',hue='type',order=[120, 80, 60, 48, 40, 35, 30],linewidth=1,ax=violinAx[0][1])
+violinAx[0][0].set_xlim([-2, 70])
+violinAx[0][1].set_xlim([-2, 70])
+sns.boxplot(data=CVdf[(CVdf['eType']=='penetrating') & (CVdf['nerve']=='Femoral')], x='stimCharge', y='CV',orient='h',hue='type',order=[120, 80, 60, 48, 40, 35, 30],linewidth=1,ax=violinAx[1][0])
+sns.boxplot(data=CVdf[(CVdf['eType']=='penetrating') & (CVdf['nerve']=='Sciatic')], x='stimCharge', y='CV',orient='h',hue='type', order=[120, 80, 60, 48, 40, 35, 30],linewidth=1,ax=violinAx[1][1])
+violinAx[1][0].set_xlim([-0.5, 10])
+violinAx[1][1].set_xlim([-0.5, 10])
+
+# sns.swarmplot(data=CVdf[(CVdf['eType']=='epineural') & (CVdf['nerve']=='Femoral')], x='stimCharge', y='CV',orient='h',order=[120, 80, 60, 48, 40, 35, 30],linewidth=0,size=2,ax=violinAx[0][0],color='k')
+# sns.swarmplot(data=CVdf[(CVdf['eType']=='epineural') & (CVdf['nerve']=='Sciatic')], x='stimCharge', y='CV',orient='h',order=[120, 80, 60, 48, 40, 35, 30],linewidth=0,size=2,ax=violinAx[0][1],color='k')
+# sns.swarmplot(data=CVdf[(CVdf['eType']=='penetrating') & (CVdf['nerve']=='Femoral') & (CVdf['threshX']!=1)], x='stimCharge', y='CV',orient='h',order=[120, 80, 60, 48, 40, 35, 30],linewidth=0,size=2,ax=violinAx[1][0],color='k')
+# sns.swarmplot(data=CVdf[(CVdf['eType']=='penetrating') & (CVdf['nerve']=='Sciatic') & (CVdf['threshX']!=1)], x='stimCharge', y='CV',orient='h',order=[120, 80, 60, 48, 40, 35, 30],linewidth=0,size=2,ax=violinAx[1][1],color='k')
+
+
+f.savefig("CV_violinPlot.png")
+f.savefig("CV_violinPlot.svg")
+
+CVdf.to_csv('conductionVelDF.csv')
+
+tmp = CVdf[(CVdf['eType']=='epineural') & (CVdf['type']=='thresh') &( (CVdf['nerve']=='Femoral'))]
+slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(tmp['stimCharge'],tmp['CV'])
+print slope, r_value**2, p_value
+
+tmp = CVdf[(CVdf['eType']=='epineural') & (CVdf['type']=='thresh') &( (CVdf['nerve']=='Sciatic'))]
+slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(tmp['stimCharge'],tmp['CV'])
+print slope, r_value**2, p_value
+
+
+tmp = CVdf[(CVdf['eType']=='penetrating') & (CVdf['type']=='thresh') &( (CVdf['nerve']=='Femoral'))]
+slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(tmp['stimCharge'],tmp['CV'])
+print slope, r_value**2, p_value
+
+tmp = CVdf[(CVdf['eType']=='penetrating') & (CVdf['type']=='thresh') &( (CVdf['nerve']=='Sciatic'))]
+slope, intercept, r_value, p_value, std_err = scipy.stats.linregress(tmp['stimCharge'],tmp['CV'])
+print slope, r_value**2, p_value
