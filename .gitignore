@@ -9,3 +9,4 @@
 *.eps
 *.csv
 *.xlsx
+*ipynb_checkpoints

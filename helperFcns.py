@@ -8,9 +8,9 @@ import plotly.graph_objs as go
 import pandas as pd
 from igraph import *
 import matplotlib.pyplot as plt
+
 plt.rcParams['svg.fonttype'] = 'none'
 plt.rcParams['pdf.fonttype'] = 42
-import seaborn as sns
 
 # constants
 mongohost = "192.168.0.246"
@@ -49,6 +49,22 @@ allCuffs_mdf = collections.OrderedDict([('Sciatic_Proximal','Sci'),
                                         ('VMed', 'VM'),
                                         ('Sart', 'Srt'),
                                         ])
+
+ENG_graphOrder =['Femoral_Proximal',
+                 'Femoral_Distal',
+                 'Saph',
+                 'Sart',
+                 'VLat',
+                 'VMed',
+                 'Sciatic_Proximal',
+                 'Sciatic_Distal',
+                 'Tibial',
+                 'Med_Gas',
+                 'Lat_Gas',
+                 'Dist_Tib',
+                 'Cmn_Per',
+                 'Dist_Cmn_Per',
+                 'Sens_Branch']
 
 maxTreeDepth = 4
 
@@ -90,15 +106,15 @@ binarySearchResolutionbySession = {'Electro':{20:1, 22:1, 26:1, 27:1, 28:1, 32:1
                 'HA02':{2:5, 3:5, 4:5},
                 'HA04':{2:5, 3:5, 4:5}}
 
-# epineuralSessions = {'Galactus':[15, 30, 40, 41, 48, 57],
-#                      'Hobgoblin':[6, 7, 10, 12, 14, 16, 20, 23],
-#                      'HA02':[2, 3, 4],
-#                      'HA04':[2, 3, 4]}
+epineuralSessions = {'Galactus':[15, 30, 40, 41, 48, 57],
+                     'Hobgoblin':[6, 7, 10, 12, 14, 16, 20, 23],
+                     'HA02':[2, 3, 4],
+                     'HA04':[2, 3, 4]}
 
-# penetratingSessions = {'Electro':[20, 22, 26, 27, 28, 32],
-#                        'Freeze':[55, 56, 59, 60, 61, 63, 68, 999],
-#                        'Galactus':[91, 94, 97, 98],
-#                        'Hobgoblin':[47, 49, 52]}
+penetratingSessions = {'Electro':[20, 22, 26, 27, 28, 32],
+                       'Freeze':[55, 56, 59, 60, 61, 63, 68, 999],
+                       'Galactus':[91, 94, 97, 98],
+                       'Hobgoblin':[47, 49, 52]}
 
 def getSubjects(eType):
     if eType == 'epineural':
@@ -170,6 +186,23 @@ def thresholdPerCuff(sub, session, ignoreCuffList, combine, stimUnits='amplitude
 
     return thresholdDict
 
+def maxAmplitudePerSession(sub, session):
+    result1 = db.command({
+        'aggregate': collection,
+        'pipeline': [
+            {'$match': {
+                "mdf_metadata.subject": sub,
+                "mdf_metadata.session": session,
+                "mdf_def.mdf_type": 'recruitment',
+            }},
+            {"$group": {
+                "_id": {},
+                "threshAmp": {"$max": "$mdf_metadata.amplitude"},
+            }},
+        ]})
+    return result1['result'][0]['threshAmp']
+
+
 def getAllElectrodes():
     return db[collection].find().distinct('mdf_metadata.electrode')
 
@@ -225,7 +258,7 @@ def sessionPerDRG(subject, eType):         # need to filter for selectivity vs t
 
 
 def convertCurrentToCharge(amplitude_uA, sub, sesh):
-    return np.floor((amplitude_uA*1e-6*PWbySession[sub][sesh]* 1e-6*1e9)*100)/100   # ensure 2 decimal places
+    return np.ceil((amplitude_uA*1e-6*PWbySession[sub][sesh]* 1e-6*1e9)*1000)/1000   # ensure 2 decimal places
 
 
 def getSurveyAmplitude(subj, sesh):
@@ -274,7 +307,7 @@ def getBinarySearchParams(subject, eType):
         resolutionVal['totalElecs'] = len(allSesh) *32
     for iRes in result1['result']:
         if len(iRes['stimAmp'])>1:
-            resolution_amp_uA = np.min(np.diff(sorted(iRes['stimAmp'])))
+            resolution_amp_uA = binarySearchResolutionbySession[subject][iRes['sesh']]  #np.min(np.diff(sorted(iRes['stimAmp'])))
             resolutionVal.setdefault(iRes['DRG'],[]).append( convertCurrentToCharge(resolution_amp_uA, subject, iRes['sesh']) )
             resolutionVal[iRes['DRG']] = list(set(resolutionVal[iRes['DRG']]))
 
@@ -472,7 +505,7 @@ def generateInnervationTree(resultCuffs, nodeColor, nodeSize=40, stimUnits='ampl
                                   color=nodeColor,  # '#DB4551',
                                   cmin=colorMap[0], cmax=colorMap[1],
                                   line=dict(color='rgb(50,50,50)', width=1),
-                                  colorscale='RdBu',
+                                  colorscale=magma,
                                   # colorscale=[[0, 'rgb(49,54,149)'],  # 0
                                   #               [0.0005, 'rgb(69,117,180)'],  # 10
                                   #               [0.005, 'rgb(116,173,209)'],  # 100
@@ -665,17 +698,19 @@ def getCVperAmp(sub, session, nerve, stimunit):
         else:
             stimVal = iRes['AMP']
         tmp = iRes['CV']
-        if type(tmp) == list:
-            CVlist = list(set(flatten(tmp)))
-        else:
-            CVlist = list(set(tmp))
-        # outDict.setdefault(iRes['AMP'], []).extend(CVlist)
-        numCV=len(CVlist)
-        tmpDict['Conduction Velocity'].extend(CVlist)
-        tmpDict['Stimulation Amplitude'].extend([stimVal]*numCV)
-        tmpDict['Subject'].extend([sub] * numCV)
-        tmpDict['DRG'].extend(iRes['DRG']*numCV)
-        tmpDict['Threshold'] = 'all'
+        if tmp and not ('999' in tmp):
+            if type(tmp) == list:
+                CVlist = list(set(flatten(tmp))) # [max(set(flatten(tmp)))] #
+            else:
+                CVlist = list(set(tmp))
+            # outDict.setdefault(iRes['AMP'], []).extend(CVlist)
+            numCV=len(CVlist)
+            tmpDict['Conduction Velocity'].extend(CVlist)
+            tmpDict['Stimulation Amplitude'].extend([stimVal]*numCV)
+            tmpDict['Subject'].extend([sub] * numCV)
+            tmpDict['DRG'].extend(iRes['DRG']*numCV)
+            tmpDict['Threshold'] = 'all'
+            tmpDict['session'] = iRes['sesh']
 
     outDF = pd.DataFrame.from_dict(tmpDict)
     return outDF
@@ -691,7 +726,7 @@ def getCVatThresh(sub, session, nerve,stimunit):
                 # "mdf_metadata.DRG": DRG,
                 "mdf_metadata.location": nerve,
                 "mdf_def.mdf_type": 'CV',
-                "mdf_metadata.is_sig_manual": 1,
+                "mdf_metadata.is_sig_manual": {"$in":[1, None]},
             }},
             {"$group": {
                 "_id": {"stimChan": "$mdf_metadata.stimChan",'sesh':"$mdf_metadata.session"},
@@ -707,7 +742,7 @@ def getCVatThresh(sub, session, nerve,stimunit):
                                     # "mdf_metadata.DRG": DRG,
                                     "mdf_metadata.location": nerve,
                                     "mdf_def.mdf_type": 'CV',
-                                    "mdf_metadata.is_sig_manual": 1,
+                                    "mdf_metadata.is_sig_manual": {"$in":[1, None]},
                                     "mdf_metadata.stimChan":iVal['_id']['stimChan'],
                                     "mdf_metadata.amplitude": {"$lte":iVal['threshAmp'] + 1, "$gte": iVal['threshAmp'] - 1},
                                                           })
@@ -719,6 +754,7 @@ def getCVatThresh(sub, session, nerve,stimunit):
                 stimVal = iVal['threshAmp']
 
             if type(tmp) == list:
+                # CVlist = [max(set(flatten(tmp)))]
                 CVlist = list(set(flatten(tmp)))
             else:
                 CVlist = list(set(tmp))
