@@ -56,73 +56,78 @@ app.layout = html.Div(children=[
         ]),
     ]),
 
-        html.Div(
-                className='three columns',
-                children=[
-                    drc.Card([
-                        drc.NamedDropdown(
-                            name='Select Electrode: ',
-                            id='dropdown-select-eType',
-                            options=[
-                                {'label': 'epineural', 'value': 'epineural'},
-                                {'label': 'penetrating', 'value': 'penetrating'},
-                            ],
-                            value='epineural',
-                            clearable=False,
-                            searchable=False,
-                        ),
+    html.Div(
+        className='three columns',
+        children=[
+            drc.Card([
+                drc.NamedDropdown(
+                    name='Select Electrode: ',
+                    id='dropdown-select-eType',
+                    options=[
+                        {'label': 'epineural', 'value': 'epineural'},
+                        {'label': 'penetrating', 'value': 'penetrating'},
+                    ],
+                    value='epineural',
+                    clearable=False,
+                    searchable=False,
+                ),
 
 
-                        drc.NamedDropdown(
-                            name='Select Subject: ',
-                            id='dropdown-select-subject',
-                            options=[
-                            ],
-                            clearable=False,
-                            searchable=False,
-                            # value='moons'
-                        ),
+                drc.NamedDropdown(
+                    name='Select Subject: ',
+                    id='dropdown-select-subject',
+                    options=[
+                    ],
+                    clearable=False,
+                    searchable=False,
+                    # value='moons'
+                ),
 
-                        drc.NamedDropdown(
-                            name='Select Session: ',
-                            id='dropdown-select-session',
-                            options=[{}],
-                            clearable=False,
-                            searchable=False,
-                        ),
+                drc.NamedDropdown(
+                    name='Select Session: ',
+                    id='dropdown-select-session',
+                    options=[{}],
+                    clearable=False,
+                    searchable=False,
+                ),
 
-                        drc.NamedDropdown(
-                            name='Select Stim channel: ',
-                            id='dropdown-select-stimChan',
-                            options=[{}],
-                            clearable=False,
-                            searchable=False,
-                        ),
+                drc.NamedDropdown(
+                    name='Select Stim channel: ',
+                    id='dropdown-select-stimChan',
+                    options=[{}],
+                    clearable=False,
+                    searchable=False,
+                ),
 
-                        drc.NamedDropdown(
-                            name='Select Stim amp: ',
-                            id='dropdown-select-stimAmp',
-                            options=[{}],
-                            clearable=False,
-                            searchable=False,
-                        ),
+                drc.NamedDropdown(
+                    name='Select Stim amp: ',
+                    id='dropdown-select-stimAmp',
+                    options=[{}],
+                    clearable=False,
+                    searchable=False,
+                ),
 
-                        html.Div(html.A("Download CSV",
-                               id='download_data',
-                               download="rawdata.csv",
-                               href="",
-                               target="_blank"
-                               )),
+                html.Div(html.A("Download CSV",
+                       id='download_data',
+                       download="rawdata.csv",
+                       href="",
+                       target="_blank"
+                       )),
 
-                        html.Div(html.A("Download SVG",
-                               id='download_fig',
-                               download="rawdata.svg",
-                               href="",
-                               target="_blank"
-                               )),
-                    ]),
-                ]
-            ),
+                html.Div(html.A("Download SVG",
+                       id='download_fig',
+                       download="rawdata.svg",
+                       href="",
+                       target="_blank"
+                       )),
+            ]),
+            drc.Card(['Select the desired trial of DRG stimulation from the dropdown menus above. The graph on the top right will '
+                      'display the stimulus triggered average (STA) electroneurogram (ENG) recorded at distal nerve branches of the sciatic and femoral nerve. '
+                      'The graph below will display an innervation tree where each node represents a nerve. The color of each node '
+                      'represents the minimum stimulation amplitude (or activation threshold) that produced a compound action potential (CAP) for the selected stimulation channel. '
+                      'Hover over each node for nerve identity and threshold. You can also download the data for each trial as a CSV file or download the STA figure as an SVG file.']),
+        ]
+        ),
     html.Div(
         className='nine columns',
         children=[
